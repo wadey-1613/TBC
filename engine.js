@@ -1,55 +1,71 @@
-/* TBC rules engine. Pure state + actions, no DOM. Works in browser (window.TBC) and node (require). */
+/* TBC rules engine — pure state + actions, no DOM. Browser: window.TBC. Node: require().
+ *
+ * Board (per player): rows[0] = front row (7 slots), rows[1] = back row (5 slots, king in slot 2).
+ * Column of front slot i = i; column of back slot i = i + 1 (back row sits centred behind the front row).
+ * Every card in the 52-card deck is a unit. Suit decides its role:
+ *   Spades  = Defence      (armour: reduces every hit by N)
+ *   Clubs   = Small attack (swarm: +1 attack per adjacent club in the same row)
+ *   Diamonds= Siege        (breach: ignores armour, double damage to Spades)
+ *   Hearts  = Long range   (ranged: shoots any column, no retaliation, cannot target the king)
+ */
 (function (root) {
   'use strict';
 
-  const BOARD = 5, HAND_MAX = 7, MAX_MANA = 10, START_HP = 25;
+  const FRONT = 7, BACK = 5, KING_I = 2, KING_HP = 30, HAND_MAX = 8, MAX_MANA = 10;
+  const SYM = { S: '♠', C: '♣', D: '♦', H: '♥' };
+  const SUIT_ROLE = { S: 'Defence', C: 'Swarm', D: 'Siege', H: 'Ranged' };
+  const SUIT_KW = { S: [], C: ['swarm'], D: ['breach'], H: ['ranged'] };
+  const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
-  // ---------------------------------------------------------------- cards
-  // Minion keywords: swift (can act the turn it's played), ward (blocks the next damage),
-  //                  ranged (attacks any lane, takes no retaliation)
-  // aura 'adjAtk': adjacent allied minions get +1 attack.
-  // target kinds: enemyMinion | allyMinion | anyMinion | anyCharacter
-  // effect 'to': target | enemyHero | ownHero | enemyMinions | allyMinions | allMinions | adjacentAllies
-  const M = (id, name, cost, atk, hp, extra) => Object.assign({ id, name, type: 'minion', cost, atk, hp, kw: [], text: '' }, extra);
-  const S = (id, name, cost, extra) => Object.assign({ id, name, type: 'spell', cost, kw: [], text: '' }, extra);
-
-  const list = [
-    M('squire', 'Squire', 1, 1, 3),
-    M('cutpurse', 'Cutpurse', 1, 2, 1, { kw: ['swift'] }),
-    M('initiate', 'Warded Initiate', 2, 1, 2, { kw: ['ward'] }),
-    M('slinger', 'Slinger', 2, 1, 2, { kw: ['ranged'] }),
-    M('martyr', 'Martyr', 2, 2, 2, { text: 'Last Words: draw a card.', onDeath: [{ op: 'draw', n: 1 }] }),
-    M('bearer', 'Standard Bearer', 3, 2, 3, { aura: 'adjAtk', text: 'Adjacent allies have +1 attack.' }),
-    M('medic', 'Field Medic', 3, 2, 3, { target: 'anyCharacter', text: 'Play: restore 3 health.', effects: [{ op: 'heal', n: 3, to: 'target' }] }),
-    M('knight', 'Knight', 3, 3, 3),
-    M('raider', 'Raider', 3, 3, 2, { kw: ['swift'] }),
-    M('sharpshooter', 'Sharpshooter', 4, 3, 3, { kw: ['ranged'] }),
-    M('pyromancer', 'Pyromancer', 4, 3, 2, { target: 'enemyMinion', text: 'Play: deal 2 damage to an enemy minion.', effects: [{ op: 'damage', n: 2, to: 'target' }] }),
-    M('warden', 'Warden', 4, 2, 5, { kw: ['ward'] }),
-    M('drillmaster', 'Drillmaster', 5, 4, 4, { text: 'Play: adjacent allies get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'adjacentAllies' }] }),
-    M('stormcaller', 'Stormcaller', 5, 3, 3, { kw: ['swift'], text: 'Play: deal 1 damage to all enemy minions.', effects: [{ op: 'damage', n: 1, to: 'enemyMinions' }] }),
-    M('ogre', 'Ogre', 5, 5, 5),
-    M('wyrm', 'Wyrm', 7, 6, 6, { kw: ['ranged'] }),
-    M('colossus', 'Colossus', 8, 8, 8),
-
-    S('spark', 'Spark', 1, { target: 'enemyMinion', text: 'Deal 2 damage to an enemy minion.', effects: [{ op: 'damage', n: 2, to: 'target' }] }),
-    S('fortify', 'Fortify', 1, { target: 'allyMinion', text: 'Give a minion +0/+3 and Ward.', effects: [{ op: 'buff', atk: 0, hp: 3, to: 'target' }, { op: 'ward', to: 'target' }] }),
-    S('mend', 'Mend', 2, { target: 'anyCharacter', text: 'Restore 5 health.', effects: [{ op: 'heal', n: 5, to: 'target' }] }),
-    S('rally', 'Rallying Cry', 2, { text: 'Your minions get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'allyMinions' }] }),
-    S('insight', 'Insight', 2, { text: 'Draw 2 cards.', effects: [{ op: 'draw', n: 2 }] }),
-    S('bolt', 'Bolt', 2, { target: 'anyCharacter', text: 'Deal 3 damage.', effects: [{ op: 'damage', n: 3, to: 'target' }] }),
-    S('volley', 'Volley', 3, { text: 'Deal 2 damage to all enemy minions.', effects: [{ op: 'damage', n: 2, to: 'enemyMinions' }] }),
-    S('assassinate', 'Assassinate', 4, { target: 'enemyMinion', text: 'Destroy an enemy minion.', effects: [{ op: 'damage', n: 99, to: 'target' }] }),
-    S('fireball', 'Fireball', 4, { target: 'anyCharacter', text: 'Deal 5 damage.', effects: [{ op: 'damage', n: 5, to: 'target' }] }),
-  ];
-  const CARDS = {};
-  list.forEach((c) => { CARDS[c.id] = c; });
-
-  const two = (ids) => ids.flatMap((id) => [id, id]);
-  const DECKS = {
-    vanguard: { name: 'Vanguard (aggro)', cards: two(['cutpurse', 'squire', 'raider', 'knight', 'bearer', 'slinger', 'spark', 'bolt', 'rally', 'drillmaster', 'stormcaller', 'sharpshooter', 'fireball', 'martyr', 'ogre']) },
-    bastion: { name: 'Bastion (control)', cards: two(['initiate', 'martyr', 'medic', 'warden', 'pyromancer', 'fortify', 'mend', 'insight', 'volley', 'assassinate', 'sharpshooter', 'bearer', 'ogre', 'wyrm', 'colossus']) },
+  // ---------------------------------------------------------------- card table
+  // [name, cost, atk, hp, armor, extra]   (rank order A,2..10,J,Q,K)
+  const T = {
+    S: [
+      ['Barricade', 1, 0, 4, 0], ['Shieldman', 1, 1, 3, 1], ['Pikeman', 2, 2, 3, 1], ['Wall', 2, 0, 6, 1],
+      ['Bulwark', 3, 1, 7, 2], ['Phalanx', 3, 2, 6, 2], ['Stone Wall', 4, 0, 9, 2], ['Fortress', 5, 2, 10, 3],
+      ['Bastion', 6, 3, 12, 3], ['Citadel', 7, 3, 14, 4],
+      ['Bodyguard', 2, 1, 4, 1, { text: 'Play: your king heals 4.', effects: [{ op: 'healKing', n: 4 }] }],
+      ['Engineer', 3, 0, 5, 1, { text: 'Play: your Spades get +2 health.', effects: [{ op: 'buff', atk: 0, hp: 2, to: 'allySuit', suit: 'S' }] }],
+      ['Warlord', 5, 3, 8, 2, { text: 'Play: your king gains +1 armour.', effects: [{ op: 'kingArmor', n: 1 }] }],
+    ],
+    C: [
+      ['Scout', 1, 1, 1, 0, { kw: ['swift'] }], ['Recruit', 1, 2, 1, 0], ['Militia', 1, 2, 2, 0], ['Footman', 2, 3, 2, 0],
+      ['Spearman', 2, 3, 3, 0], ['Raider', 3, 4, 2, 0, { kw: ['swift'] }], ['Veteran', 3, 4, 4, 0], ['Berserker', 4, 5, 3, 0],
+      ['Champion', 4, 5, 5, 0], ['Warband', 5, 6, 5, 0],
+      ['Drummer', 3, 1, 3, 0, { text: 'Play: your Clubs get +1 attack.', effects: [{ op: 'buff', atk: 1, hp: 0, to: 'allySuit', suit: 'C' }] }],
+      ['Recruiter', 4, 2, 3, 0, { text: 'Play: summon two 1/1 Conscripts nearby.', effects: [{ op: 'summon', n: 2 }] }],
+      ['Warchief', 5, 4, 5, 0, { text: 'Play: all your Clubs may act this turn.', effects: [{ op: 'ready', to: 'allySuit', suit: 'C' }] }],
+    ],
+    D: [
+      ['Handcart', 2, 2, 3, 0], ['Ram', 3, 4, 3, 0], ['Ladder Crew', 3, 3, 5, 0], ['Mangonel', 4, 5, 4, 0],
+      ['Ballista Crew', 4, 4, 6, 0], ['Siege Engine', 5, 6, 5, 0], ['Trebuchet', 5, 7, 4, 0], ['Juggernaut', 6, 7, 7, 0],
+      ['Behemoth', 7, 9, 6, 0], ['Colossus', 8, 10, 8, 0],
+      ['Sapper', 4, 3, 3, 0, { target: 'enemySpade', text: 'Play: deal 4 damage to an enemy Spade.', effects: [{ op: 'damage', n: 4, to: 'target' }] }],
+      ['Siege Master', 5, 3, 5, 0, { text: 'Play: your Diamonds get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'allySuit', suit: 'D' }] }],
+      ['Siege Tower', 7, 5, 9, 0, { text: 'Play: deal 2 damage to all enemy Spades.', effects: [{ op: 'damage', n: 2, to: 'enemySuit', suit: 'S' }] }],
+    ],
+    H: [
+      ['Slinger', 1, 1, 1, 0], ['Archer', 1, 1, 2, 0], ['Bowman', 2, 2, 2, 0], ['Longbow', 2, 2, 3, 0],
+      ['Crossbow', 3, 3, 2, 0], ['Skirmisher', 3, 3, 3, 0], ['Marksman', 4, 4, 3, 0], ['Ranger', 4, 4, 4, 0],
+      ['Sniper', 5, 5, 3, 0], ['Master Archer', 6, 6, 4, 0],
+      ['Fletcher', 3, 1, 3, 0, { text: 'Play: draw a card.', effects: [{ op: 'draw', n: 1 }] }],
+      ['Sharpshooter', 4, 3, 3, 0, { target: 'enemyFront', text: 'Play: deal 2 damage to an enemy front-row unit.', effects: [{ op: 'damage', n: 2, to: 'target' }] }],
+      ['Hawkeye', 6, 5, 4, 0, { target: 'enemyUnit', text: 'Play: deal 3 damage to any enemy unit.', effects: [{ op: 'damage', n: 3, to: 'target' }] }],
+    ],
   };
+
+  const CARDS = {};
+  for (const suit of Object.keys(T)) {
+    T[suit].forEach((row, r) => {
+      const [name, cost, atk, hp, armor, extra] = row;
+      const id = suit + RANKS[r];
+      CARDS[id] = Object.assign({ id, suit, rank: RANKS[r], name, cost, atk, hp, armor, text: '' }, extra);
+      CARDS[id].kw = SUIT_KW[suit].concat((extra && extra.kw) || []);
+    });
+  }
+  CARDS.TOK = { id: 'TOK', suit: 'C', rank: '', name: 'Conscript', cost: 0, atk: 1, hp: 1, armor: 0, text: '', kw: ['swarm'] };
+  CARDS.KING = { id: 'KING', suit: null, rank: '♔', name: 'King', cost: 0, atk: 0, hp: KING_HP, armor: 0, text: 'Lose your king and you lose the game.', kw: [] };
+  const DECK = Object.keys(CARDS).filter((id) => id !== 'TOK' && id !== 'KING');
 
   // ---------------------------------------------------------------- helpers
   function rand(state) { // mulberry32
@@ -66,42 +82,71 @@
     }
     return arr;
   }
-  const sameRef = (a, b) => !!a && !!b && a.p === b.p && a.hero === b.hero && a.slot === b.slot;
+  const sameRef = (a, b) => !!a && !!b && a.p === b.p && a.r === b.r && a.i === b.i;
+  const locEq = (a, b) => !!a && !!b && a.r === b.r && a.i === b.i;
   const clone = (state) => { const l = state.log; state.log = null; const c = JSON.parse(JSON.stringify(state)); state.log = l; return c; };
-  function log(state, msg) { if (state.log) { state.log.push(msg); if (state.log.length > 80) state.log.shift(); } }
+  function log(state, msg) { if (state.log) { state.log.push(msg); if (state.log.length > 100) state.log.shift(); } }
 
-  const minionAt = (state, p, slot) => (slot >= 0 && slot < BOARD ? state.players[p].board[slot] : null);
-  function atkOf(state, p, slot) {
-    const m = minionAt(state, p, slot);
-    if (!m) return 0;
-    let a = m.atk;
-    for (const d of [-1, 1]) {
-      const n = minionAt(state, p, slot + d);
-      if (n && CARDS[n.id].aura === 'adjAtk') a += 1;
+  const rowLen = (r) => (r === 0 ? FRONT : BACK);
+  const colOf = (r, i) => (r === 0 ? i : i + 1);
+  const unitAt = (state, p, r, i) => (i >= 0 && i < rowLen(r) ? state.players[p].rows[r][i] : null);
+  const unitOf = (state, ref) => unitAt(state, ref.p, ref.r, ref.i);
+  const isKing = (u) => !!u && u.id === 'KING';
+  const hasKw = (u, kw) => CARDS[u.id].kw.includes(kw);
+  const suitOf = (u) => CARDS[u.id].suit;
+  const unitName = (state, ref) => CARDS[unitOf(state, ref).id].name;
+
+  function atkOf(state, p, r, i) {
+    const u = unitAt(state, p, r, i);
+    if (!u) return 0;
+    let a = u.atk;
+    if (hasKw(u, 'swarm')) {
+      for (const d of [-1, 1]) { const n = unitAt(state, p, r, i + d); if (n && suitOf(n) === 'C') a += 1; }
     }
     return a;
   }
-  const hasKw = (m, kw) => CARDS[m.id].kw.includes(kw);
-  const refName = (state, r) => (r.hero ? `Player ${r.p + 1}` : CARDS[state.players[r.p].board[r.slot].id].name);
 
-  // ---------------------------------------------------------------- game setup / flow
-  function newGame(seed, deckIds) {
-    const state = { rng: seed | 0, turn: 1, active: 0, winner: null, uid: 0, log: [], players: [] };
+  function attackDamage(att, atkVal, def) {
+    if (hasKw(att, 'breach')) return suitOf(def) === 'S' ? atkVal * 2 : atkVal;
+    return Math.max(0, atkVal - def.armor);
+  }
+
+  function makeUnit(state, id) {
+    const c = CARDS[id];
+    return { uid: ++state.uid, id, atk: c.atk, hp: c.hp, maxHp: c.hp, armor: c.armor, ready: false };
+  }
+
+  // The first unit an attacker finds in a column: front row first, then the back row behind it.
+  function firstInColumn(state, p, col) {
+    if (col < 0 || col >= FRONT) return null;
+    if (state.players[p].rows[0][col]) return { p, r: 0, i: col };
+    const bi = col - 1;
+    if (bi >= 0 && bi < BACK && state.players[p].rows[1][bi]) return { p, r: 1, i: bi };
+    return null;
+  }
+
+  // ---------------------------------------------------------------- setup / flow
+  function newGame(seed) {
+    const state = { rng: seed | 0, turn: 1, active: 0, winner: null, reason: '', uid: 0, log: [], players: [] };
     for (let p = 0; p < 2; p++) {
-      state.players.push({ hp: START_HP, mana: 0, maxMana: 0, fatigue: 0, deck: shuffle(state, DECKS[deckIds[p]].cards.slice()), hand: [], board: new Array(BOARD).fill(null) });
+      const rows = [new Array(FRONT).fill(null), new Array(BACK).fill(null)];
+      const pl = { mana: 0, maxMana: 0, deck: shuffle(state, DECK.slice()), hand: [], rows };
+      rows[1][KING_I] = { uid: ++state.uid, id: 'KING', atk: 0, hp: KING_HP, maxHp: KING_HP, armor: 0, ready: false };
+      state.players.push(pl);
     }
-    for (let i = 0; i < 3; i++) draw(state, 0);
-    for (let i = 0; i < 4; i++) draw(state, 1);
+    for (let i = 0; i < 4; i++) draw(state, 0);
+    for (let i = 0; i < 5; i++) draw(state, 1);
     startTurn(state);
     return state;
   }
 
   function draw(state, p) {
+    if (state.winner != null) return;
     const pl = state.players[p];
     if (!pl.deck.length) {
-      pl.fatigue++;
-      pl.hp -= pl.fatigue;
-      log(state, `Player ${p + 1} is out of cards and takes ${pl.fatigue} fatigue damage.`);
+      state.winner = 1 - p;
+      state.reason = `Player ${p + 1} ran out of cards.`;
+      log(state, state.reason);
       return;
     }
     const id = pl.deck.pop();
@@ -113,105 +158,81 @@
     const pl = state.players[state.active];
     pl.maxMana = Math.min(MAX_MANA, pl.maxMana + 1);
     pl.mana = pl.maxMana;
-    pl.board.forEach((m) => { if (m) m.ready = true; });
-    draw(state, state.active);
+    pl.rows.forEach((row) => row.forEach((u) => { if (u) u.ready = true; }));
     log(state, `— Turn ${state.turn}: Player ${state.active + 1} —`);
+    draw(state, state.active);
     cleanup(state);
   }
 
-  function dealDamage(state, ref, n) {
-    if (n <= 0) return;
-    if (ref.hero) { state.players[ref.p].hp -= n; return; }
-    const m = minionAt(state, ref.p, ref.slot);
-    if (!m) return;
-    if (m.ward) { m.ward = false; return; }
-    m.hp -= n;
-  }
-
   function cleanup(state) {
-    for (let guard = 0; guard < 30; guard++) {
-      let died = false;
-      for (let p = 0; p < 2; p++) {
-        for (let s = 0; s < BOARD; s++) {
-          const m = state.players[p].board[s];
-          if (m && m.hp <= 0) {
-            state.players[p].board[s] = null;
-            died = true;
-            log(state, `${CARDS[m.id].name} dies.`);
-            const c = CARDS[m.id];
-            if (c.onDeath) runEffects(state, c.onDeath, { p, slot: s });
-          }
-        }
+    for (let p = 0; p < 2; p++) {
+      for (let r = 0; r < 2; r++) {
+        state.players[p].rows[r].forEach((u, i) => {
+          if (u && u.hp <= 0 && !isKing(u)) { state.players[p].rows[r][i] = null; log(state, `${CARDS[u.id].name} is destroyed.`); }
+        });
       }
-      if (!died) break;
     }
     if (state.winner == null) {
-      const d0 = state.players[0].hp <= 0, d1 = state.players[1].hp <= 0;
-      if (d0 && d1) state.winner = 2;
-      else if (d0) state.winner = 1;
-      else if (d1) state.winner = 0;
-      if (state.winner != null) log(state, state.winner === 2 ? 'Draw!' : `Player ${state.winner + 1} wins!`);
+      const k0 = state.players[0].rows[1][KING_I].hp <= 0, k1 = state.players[1].rows[1][KING_I].hp <= 0;
+      if (k0 && k1) { state.winner = 2; state.reason = 'Both kings have fallen.'; }
+      else if (k0) { state.winner = 1; state.reason = "Player 1's king has fallen."; }
+      else if (k1) { state.winner = 0; state.reason = "Player 2's king has fallen."; }
+      if (state.winner != null) log(state, state.reason);
     }
   }
 
-  function resolveTargets(state, to, ctx) {
-    const refs = [];
-    const mins = (p) => state.players[p].board.forEach((m, slot) => { if (m) refs.push({ p, slot }); });
-    switch (to) {
-      case 'target': if (ctx.target) refs.push(ctx.target); break;
-      case 'enemyHero': refs.push({ p: 1 - ctx.p, hero: true }); break;
-      case 'ownHero': refs.push({ p: ctx.p, hero: true }); break;
-      case 'enemyMinions': mins(1 - ctx.p); break;
-      case 'allyMinions': mins(ctx.p); break;
-      case 'allMinions': mins(0); mins(1); break;
-      case 'adjacentAllies':
-        for (const d of [-1, 1]) if (minionAt(state, ctx.p, ctx.slot + d)) refs.push({ p: ctx.p, slot: ctx.slot + d });
-        break;
-      default: break;
-    }
-    return refs;
+  // ---------------------------------------------------------------- effects
+  function allUnits(state, p) {
+    const out = [];
+    state.players[p].rows.forEach((row, r) => row.forEach((u, i) => { if (u && !isKing(u)) out.push({ p, r, i }); }));
+    return out;
+  }
+
+  function validTargets(state, p, kind) {
+    const foe = allUnits(state, 1 - p);
+    if (kind === 'enemyFront') return foe.filter((x) => x.r === 0);
+    if (kind === 'enemyUnit') return foe;
+    if (kind === 'enemySpade') return foe.filter((x) => suitOf(unitOf(state, x)) === 'S');
+    return [];
   }
 
   function runEffects(state, effects, ctx) {
     for (const e of effects) {
-      if (e.op === 'draw') { for (let i = 0; i < e.n; i++) draw(state, ctx.p); continue; }
-      for (const ref of resolveTargets(state, e.to, ctx)) {
-        if (e.op === 'damage') dealDamage(state, ref, e.n);
-        else if (e.op === 'heal') {
-          if (ref.hero) state.players[ref.p].hp = Math.min(START_HP, state.players[ref.p].hp + e.n);
-          else { const m = minionAt(state, ref.p, ref.slot); if (m) m.hp = Math.min(m.maxHp, m.hp + e.n); }
-        } else if (e.op === 'buff') {
-          const m = minionAt(state, ref.p, ref.slot);
-          if (m) { m.atk += e.atk; m.hp += e.hp; m.maxHp += e.hp; }
-        } else if (e.op === 'ward') {
-          const m = minionAt(state, ref.p, ref.slot);
-          if (m) m.ward = true;
+      const king = state.players[ctx.p].rows[1][KING_I];
+      if (e.op === 'draw') { for (let k = 0; k < e.n; k++) draw(state, ctx.p); }
+      else if (e.op === 'healKing') king.hp = Math.min(king.maxHp, king.hp + e.n);
+      else if (e.op === 'kingArmor') king.armor += e.n;
+      else if (e.op === 'buff' || e.op === 'ready') {
+        for (const ref of allUnits(state, ctx.p)) {
+          const u = unitOf(state, ref);
+          if (suitOf(u) !== e.suit) continue;
+          if (e.op === 'ready') u.ready = true;
+          else { u.atk += e.atk; u.hp += e.hp; u.maxHp += e.hp; }
         }
+      } else if (e.op === 'damage') {
+        const refs = e.to === 'target' ? (ctx.target ? [ctx.target] : [])
+          : allUnits(state, 1 - ctx.p).filter((x) => suitOf(unitOf(state, x)) === e.suit);
+        for (const ref of refs) { const u = unitOf(state, ref); if (u) u.hp -= e.n; }
+      } else if (e.op === 'summon') {
+        const free = [];
+        state.players[ctx.p].rows[0].forEach((u, i) => { if (!u) free.push(i); });
+        free.sort((a, b) => Math.abs(a - ctx.col) - Math.abs(b - ctx.col) || a - b);
+        free.slice(0, e.n).forEach((i) => { state.players[ctx.p].rows[0][i] = makeUnit(state, 'TOK'); });
       }
     }
   }
 
   // ---------------------------------------------------------------- legal actions
-  function validTargets(state, p, kind) {
-    const refs = [];
-    const mins = (q) => state.players[q].board.forEach((m, slot) => { if (m) refs.push({ p: q, slot }); });
-    if (kind === 'enemyMinion') mins(1 - p);
-    else if (kind === 'allyMinion') mins(p);
-    else if (kind === 'anyMinion') { mins(p); mins(1 - p); }
-    else if (kind === 'anyCharacter') { mins(p); mins(1 - p); refs.push({ p, hero: true }, { p: 1 - p, hero: true }); }
-    return refs;
-  }
-
-  function attackTargets(state, p, slot) {
-    const m = minionAt(state, p, slot);
-    const out = [];
-    const foe = 1 - p;
-    if (hasKw(m, 'ranged')) {
-      state.players[foe].board.forEach((e, s) => { if (e) out.push({ p: foe, slot: s }); });
-    } else {
-      for (const d of [-1, 0, 1]) if (minionAt(state, foe, slot + d)) out.push({ p: foe, slot: slot + d });
+  function attackTargets(state, p, r, i) {
+    const u = unitAt(state, p, r, i), foe = 1 - p, out = [];
+    const ranged = hasKw(u, 'ranged');
+    if (!ranged && r === 1) return out; // melee units in the back row are boxed in
+    const c = colOf(r, i);
+    const cols = ranged ? [0, 1, 2, 3, 4, 5, 6] : [c - 1, c, c + 1];
+    for (const col of cols) {
+      const t = firstInColumn(state, foe, col);
+      if (t && !(ranged && isKing(unitOf(state, t)))) out.push(t);
     }
-    if (!minionAt(state, foe, slot)) out.push({ p: foe, hero: true });
     return out;
   }
 
@@ -219,35 +240,29 @@
     if (state.winner != null) return [];
     const p = state.active, me = state.players[p], acts = [];
     const empty = [];
-    me.board.forEach((m, s) => { if (!m) empty.push(s); });
+    me.rows.forEach((row, r) => row.forEach((u, i) => { if (!u) empty.push({ r, i }); }));
 
-    me.hand.forEach((id, i) => {
+    me.hand.forEach((id, h) => {
       const c = CARDS[id];
       if (c.cost > me.mana) return;
       const targets = c.target ? validTargets(state, p, c.target) : [];
-      if (c.type === 'minion') {
-        for (const cell of empty) {
-          if (targets.length) targets.forEach((target) => acts.push({ t: 'play', hand: i, cell, target }));
-          else acts.push({ t: 'play', hand: i, cell });
-        }
-      } else if (c.target) {
-        targets.forEach((target) => acts.push({ t: 'play', hand: i, target }));
-      } else {
-        acts.push({ t: 'play', hand: i });
+      for (const cell of empty) {
+        if (targets.length) targets.forEach((target) => acts.push({ t: 'play', hand: h, cell, target }));
+        else acts.push({ t: 'play', hand: h, cell });
       }
     });
 
-    me.board.forEach((m, from) => {
-      if (!m || !m.ready) return;
-      if (atkOf(state, p, from) > 0) attackTargets(state, p, from).forEach((target) => acts.push({ t: 'attack', from, target }));
-      for (const d of [-1, 1]) if (minionAt(state, p, from + d) === null && from + d >= 0 && from + d < BOARD) acts.push({ t: 'move', from, cell: from + d });
-    });
+    me.rows.forEach((row, r) => row.forEach((u, i) => {
+      if (!u || isKing(u) || !u.ready) return;
+      if (atkOf(state, p, r, i) > 0) attackTargets(state, p, r, i).forEach((target) => acts.push({ t: 'attack', from: { r, i }, target }));
+      const dests = [{ r, i: i - 1 }, { r, i: i + 1 }, r === 0 ? { r: 1, i: i - 1 } : { r: 0, i: i + 1 }];
+      for (const d of dests) if (d.i >= 0 && d.i < rowLen(d.r) && !me.rows[d.r][d.i]) acts.push({ t: 'move', from: { r, i }, cell: d });
+    }));
 
     acts.push({ t: 'end' });
     return acts;
   }
 
-  // ---------------------------------------------------------------- apply
   function applyAction(state, a) {
     const key = JSON.stringify(a);
     if (!legalActions(state).some((x) => JSON.stringify(x) === key)) throw new Error('Illegal action ' + key);
@@ -264,37 +279,36 @@
       const id = me.hand[a.hand], c = CARDS[id];
       me.hand.splice(a.hand, 1);
       me.mana -= c.cost;
-      if (c.type === 'minion') {
-        me.board[a.cell] = { uid: ++state.uid, id, atk: c.atk, hp: c.hp, maxHp: c.hp, ward: c.kw.includes('ward'), ready: c.kw.includes('swift') };
-        log(state, `Player ${p + 1} plays ${c.name} in lane ${a.cell + 1}.`);
-        if (c.effects) runEffects(state, c.effects, { p, slot: a.cell, target: a.target });
-      } else {
-        log(state, `Player ${p + 1} casts ${c.name}${a.target ? ' on ' + refName(state, a.target) : ''}.`);
-        runEffects(state, c.effects, { p, target: a.target });
-      }
+      const u = makeUnit(state, id);
+      u.ready = c.kw.includes('swift');
+      me.rows[a.cell.r][a.cell.i] = u;
+      log(state, `Player ${p + 1} plays ${SYM[c.suit]}${c.rank} ${c.name} (${a.cell.r === 0 ? 'front' : 'back'} ${a.cell.i + 1}).`);
+      if (c.effects) runEffects(state, c.effects, { p, col: colOf(a.cell.r, a.cell.i), target: a.target });
     } else if (a.t === 'move') {
-      me.board[a.cell] = me.board[a.from];
-      me.board[a.from] = null;
-      me.board[a.cell].ready = false;
-      log(state, `${CARDS[me.board[a.cell].id].name} shifts to lane ${a.cell + 1}.`);
+      const u = me.rows[a.from.r][a.from.i];
+      me.rows[a.from.r][a.from.i] = null;
+      me.rows[a.cell.r][a.cell.i] = u;
+      u.ready = false;
+      log(state, `${CARDS[u.id].name} moves to ${a.cell.r === 0 ? 'front' : 'back'} ${a.cell.i + 1}.`);
     } else if (a.t === 'attack') {
-      const att = me.board[a.from], atkVal = atkOf(state, p, a.from);
+      const att = me.rows[a.from.r][a.from.i], def = unitOf(state, a.target);
+      const atkVal = atkOf(state, p, a.from.r, a.from.i);
+      const defVal = atkOf(state, a.target.p, a.target.r, a.target.i);
       att.ready = false;
-      if (a.target.hero) {
-        log(state, `${CARDS[att.id].name} hits Player ${a.target.p + 1} for ${atkVal}.`);
-        dealDamage(state, a.target, atkVal);
-      } else {
-        const defVal = atkOf(state, a.target.p, a.target.slot);
-        log(state, `${CARDS[att.id].name} attacks ${refName(state, a.target)}.`);
-        dealDamage(state, a.target, atkVal);
-        if (!hasKw(att, 'ranged')) dealDamage(state, { p, slot: a.from }, defVal);
+      const dmg = attackDamage(att, atkVal, def);
+      def.hp -= dmg;
+      log(state, `${CARDS[att.id].name} hits ${CARDS[def.id].name} for ${dmg}${dmg === 0 ? ' (blocked by armour)' : ''}.`);
+      if (!hasKw(att, 'ranged') && defVal > 0) {
+        const back = attackDamage(def, defVal, att);
+        att.hp -= back;
+        if (back) log(state, `${CARDS[def.id].name} strikes back for ${back}.`);
       }
     }
     cleanup(state);
     return state;
   }
 
-  const api = { BOARD, HAND_MAX, MAX_MANA, START_HP, CARDS, DECKS, newGame, legalActions, applyAction, clone, atkOf, hasKw, sameRef, minionAt };
+  const api = { FRONT, BACK, KING_I, KING_HP, HAND_MAX, MAX_MANA, SYM, SUIT_ROLE, CARDS, DECK, newGame, legalActions, applyAction, clone, atkOf, hasKw, suitOf, isKing, sameRef, locEq, unitAt, unitOf, colOf, firstInColumn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TBC = api;
 })(typeof window !== 'undefined' ? window : globalThis);

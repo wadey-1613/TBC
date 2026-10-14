@@ -2,20 +2,22 @@
 (function (root) {
   'use strict';
   const E = typeof module !== 'undefined' && module.exports ? require('./engine.js') : root.TBC;
-  const { CARDS, BOARD } = E;
+  const { FRONT, BACK, KING_I } = E;
 
   function sideScore(s, p) {
     const pl = s.players[p], foe = s.players[1 - p];
-    let v = pl.hp * 1.5 + pl.hand.length * 1.5 - pl.mana * 0.4;
-    for (let slot = 0; slot < BOARD; slot++) {
-      const m = pl.board[slot];
-      if (!m) continue;
-      const atk = E.atkOf(s, p, slot);
-      v += (atk + m.hp) * 1.2;
-      if (m.ward) v += 1.5;
-      if (E.hasKw(m, 'ranged')) v += 1.5;
-      if (CARDS[m.id].aura) v += 2;
-      if (!foe.board[slot]) v += atk * 0.4; // open lane = pressure on the hero
+    let v = pl.rows[1][KING_I].hp * 3 + pl.hand.length * 1.5 - pl.mana * 0.4 + pl.deck.length * 0.05;
+    for (let r = 0; r < 2; r++) {
+      const len = r === 0 ? FRONT : BACK;
+      for (let i = 0; i < len; i++) {
+        const u = pl.rows[r][i];
+        if (!u || E.isKing(u)) continue;
+        const atk = E.atkOf(s, p, r, i);
+        v += atk + u.hp * 0.8 + u.armor * 1.5;
+        if (E.hasKw(u, 'ranged')) { v += 1; if (r === 1) v += 1; }          // archers are safest behind the line
+        if (r === 0 && i >= 2 && i <= 4) v += (i === 3 ? 3 : 1.5) * (u.armor > 0 ? 1 : 0.5); // screen the king
+        if (r === 0 && !foe.rows[0][i]) v += atk * 0.3;                      // open column = pressure
+      }
     }
     return v;
   }
