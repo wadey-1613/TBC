@@ -1,71 +1,108 @@
 /* TBC rules engine — pure state + actions, no DOM. Browser: window.TBC. Node: require().
  *
+ * Each player has TWO piles:
+ *   infDeck — 36 infantry (melee / ranged / defence). Free. You deploy the top card once per turn.
+ *   deck    — the 52-card hand deck: big units, boosts and tactics. Drawn to hand, cost mana.
  * Board (per player): rows[0] = front row (7 slots), rows[1] = back row (5 slots, king in slot 2).
- * Column of front slot i = i; column of back slot i = i + 1 (back row sits centred behind the front row).
- * Every card in the 52-card deck is a unit. Suit decides its role:
- *   Spades  = Defence      (armour: reduces every hit by N)
- *   Clubs   = Small attack (swarm: +1 attack per adjacent club in the same row)
- *   Diamonds= Siege        (breach: ignores armour, double damage to Spades)
- *   Hearts  = Long range   (ranged: shoots any column, no retaliation, cannot target the king)
+ * Column of front slot i = i; column of back slot i = i + 1.
+ *
+ * Hand-deck suits:  ♦ Siege (big breach units + siege tactics)   ♠ Defence (fortresses + defensive boosts)
+ *                   ♣ Offence (offensive boosts + commanders)     ♥ Long range (artillery + tactics)
  */
 (function (root) {
   'use strict';
 
   const FRONT = 7, BACK = 5, KING_I = 2, KING_HP = 30, HAND_MAX = 8, MAX_MANA = 10;
   const SYM = { S: '♠', C: '♣', D: '♦', H: '♥' };
-  const SUIT_ROLE = { S: 'Defence', C: 'Swarm', D: 'Siege', H: 'Ranged' };
-  const SUIT_KW = { S: [], C: ['swarm'], D: ['breach'], H: ['ranged'] };
+  const SUIT_ROLE = { S: 'Defence', C: 'Offence', D: 'Siege', H: 'Long range' };
+  const CLS_SYM = { melee: '⚔', ranged: '➶', defence: '▣' };
   const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
-  // ---------------------------------------------------------------- card table
-  // [name, cost, atk, hp, armor, extra]   (rank order A,2..10,J,Q,K)
-  const T = {
-    S: [
-      ['Barricade', 1, 0, 4, 0], ['Shieldman', 1, 1, 3, 1], ['Pikeman', 2, 2, 3, 1], ['Wall', 2, 0, 6, 1],
-      ['Bulwark', 3, 1, 7, 2], ['Phalanx', 3, 2, 6, 2], ['Stone Wall', 4, 0, 9, 2], ['Fortress', 5, 2, 10, 3],
-      ['Bastion', 6, 3, 12, 3], ['Citadel', 7, 3, 14, 4],
-      ['Bodyguard', 2, 1, 4, 1, { text: 'Play: your king heals 4.', effects: [{ op: 'healKing', n: 4 }] }],
-      ['Engineer', 3, 0, 5, 1, { text: 'Play: your Spades get +2 health.', effects: [{ op: 'buff', atk: 0, hp: 2, to: 'allySuit', suit: 'S' }] }],
-      ['Warlord', 5, 3, 8, 2, { text: 'Play: your king gains +1 armour.', effects: [{ op: 'kingArmor', n: 1 }] }],
-    ],
-    C: [
-      ['Scout', 1, 1, 1, 0, { kw: ['swift'] }], ['Recruit', 1, 2, 1, 0], ['Militia', 1, 2, 2, 0], ['Footman', 2, 3, 2, 0],
-      ['Spearman', 2, 3, 3, 0], ['Raider', 3, 4, 2, 0, { kw: ['swift'] }], ['Veteran', 3, 4, 4, 0], ['Berserker', 4, 5, 3, 0],
-      ['Champion', 4, 5, 5, 0], ['Warband', 5, 6, 5, 0],
-      ['Drummer', 3, 1, 3, 0, { text: 'Play: your Clubs get +1 attack.', effects: [{ op: 'buff', atk: 1, hp: 0, to: 'allySuit', suit: 'C' }] }],
-      ['Recruiter', 4, 2, 3, 0, { text: 'Play: summon two 1/1 Conscripts nearby.', effects: [{ op: 'summon', n: 2 }] }],
-      ['Warchief', 5, 4, 5, 0, { text: 'Play: all your Clubs may act this turn.', effects: [{ op: 'ready', to: 'allySuit', suit: 'C' }] }],
-    ],
-    D: [
-      ['Handcart', 2, 2, 3, 0], ['Ram', 3, 4, 3, 0], ['Ladder Crew', 3, 3, 5, 0], ['Mangonel', 4, 5, 4, 0],
-      ['Ballista Crew', 4, 4, 6, 0], ['Siege Engine', 5, 6, 5, 0], ['Trebuchet', 5, 7, 4, 0], ['Juggernaut', 6, 7, 7, 0],
-      ['Behemoth', 7, 9, 6, 0], ['Colossus', 8, 10, 8, 0],
-      ['Sapper', 4, 3, 3, 0, { target: 'enemySpade', text: 'Play: deal 4 damage to an enemy Spade.', effects: [{ op: 'damage', n: 4, to: 'target' }] }],
-      ['Siege Master', 5, 3, 5, 0, { text: 'Play: your Diamonds get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'allySuit', suit: 'D' }] }],
-      ['Siege Tower', 7, 5, 9, 0, { text: 'Play: deal 2 damage to all enemy Spades.', effects: [{ op: 'damage', n: 2, to: 'enemySuit', suit: 'S' }] }],
-    ],
-    H: [
-      ['Slinger', 1, 1, 1, 0], ['Archer', 1, 1, 2, 0], ['Bowman', 2, 2, 2, 0], ['Longbow', 2, 2, 3, 0],
-      ['Crossbow', 3, 3, 2, 0], ['Skirmisher', 3, 3, 3, 0], ['Marksman', 4, 4, 3, 0], ['Ranger', 4, 4, 4, 0],
-      ['Sniper', 5, 5, 3, 0], ['Master Archer', 6, 6, 4, 0],
-      ['Fletcher', 3, 1, 3, 0, { text: 'Play: draw a card.', effects: [{ op: 'draw', n: 1 }] }],
-      ['Sharpshooter', 4, 3, 3, 0, { target: 'enemyFront', text: 'Play: deal 2 damage to an enemy front-row unit.', effects: [{ op: 'damage', n: 2, to: 'target' }] }],
-      ['Hawkeye', 6, 5, 4, 0, { target: 'enemyUnit', text: 'Play: deal 3 damage to any enemy unit.', effects: [{ op: 'damage', n: 3, to: 'target' }] }],
-    ],
-  };
-
+  // ---------------------------------------------------------------- cards
+  // Keywords: ranged (hits any column, no retaliation, never the king) · breach (ignores armour, x2 vs ♠) · swift (acts when played)
+  // Targets: enemyUnit | enemyInf | enemyFront | allyUnit | allyInf
+  // Effect 'to': target | allyInf | allyUnits | allySuit(suit) | enemyInf | enemyUnits
   const CARDS = {};
-  for (const suit of Object.keys(T)) {
-    T[suit].forEach((row, r) => {
-      const [name, cost, atk, hp, armor, extra] = row;
-      const id = suit + RANKS[r];
-      CARDS[id] = Object.assign({ id, suit, rank: RANKS[r], name, cost, atk, hp, armor, text: '' }, extra);
-      CARDS[id].kw = SUIT_KW[suit].concat((extra && extra.kw) || []);
-    });
+  const reg = (c) => { CARDS[c.id] = Object.assign({ kw: [], text: '', armor: 0, atk: 0, hp: 0, cost: 0 }, c); return CARDS[c.id]; };
+
+  // ---- infantry (free, small stats)
+  const INF = [
+    ['iSword', 'Swordsman', 'melee', 2, 2, 0, 6], ['iBrute', 'Brute', 'melee', 3, 1, 0, 3], ['iSpear', 'Spearman', 'melee', 1, 3, 0, 3],
+    ['iArcher', 'Archer', 'ranged', 2, 1, 0, 6], ['iSlinger', 'Slinger', 'ranged', 1, 2, 0, 6],
+    ['iShield', 'Shieldman', 'defence', 1, 3, 1, 6], ['iGuard', 'Guard', 'defence', 0, 4, 1, 3], ['iPike', 'Pikeman', 'defence', 2, 2, 1, 3],
+  ];
+  const INF_DECK = [];
+  for (const [id, name, cls, atk, hp, armor, n] of INF) {
+    reg({ id, name, kind: 'unit', inf: true, cls, atk, hp, armor, kw: cls === 'ranged' ? ['ranged'] : [], text: '' });
+    for (let k = 0; k < n; k++) INF_DECK.push(id);
   }
-  CARDS.TOK = { id: 'TOK', suit: 'C', rank: '', name: 'Conscript', cost: 0, atk: 1, hp: 1, armor: 0, text: '', kw: ['swarm'] };
-  CARDS.KING = { id: 'KING', suit: null, rank: '♔', name: 'King', cost: 0, atk: 0, hp: KING_HP, armor: 0, text: 'Lose your king and you lose the game.', kw: [] };
-  const DECK = Object.keys(CARDS).filter((id) => id !== 'TOK' && id !== 'KING');
+
+  // ---- hand deck
+  const unit = (suit, rank, name, cost, atk, hp, armor, extra) => reg(Object.assign({ id: suit + rank, suit, rank, name, kind: 'unit', cost, atk, hp, armor }, extra));
+  const spell = (suit, rank, name, cost, text, effects, extra) => reg(Object.assign({ id: suit + rank, suit, rank, name, kind: 'spell', cost, text, effects }, extra));
+  const B = ['breach'], R = ['ranged'];
+
+  // ♦ Siege — big units that break defences
+  unit('D', 'A', 'Ram', 2, 4, 3, 0, { kw: B });
+  unit('D', '2', 'Ladder Crew', 3, 3, 5, 0, { kw: B });
+  unit('D', '3', 'Mangonel', 3, 5, 3, 0, { kw: B });
+  unit('D', '4', 'Ballista Cart', 4, 5, 5, 0, { kw: B });
+  unit('D', '5', 'Catapult', 4, 6, 4, 0, { kw: B });
+  unit('D', '6', 'Siege Engine', 5, 6, 6, 0, { kw: B });
+  unit('D', '7', 'Trebuchet', 5, 8, 4, 0, { kw: B });
+  unit('D', '8', 'Juggernaut', 6, 8, 7, 0, { kw: B });
+  unit('D', '9', 'Behemoth', 7, 10, 8, 0, { kw: B });
+  unit('D', '10', 'Colossus', 8, 12, 10, 0, { kw: B });
+  spell('D', 'J', 'Sapper Charge', 3, 'Deal 6 damage to an enemy front-row unit.', [{ op: 'damage', n: 6, to: 'target' }], { target: 'enemyFront' });
+  spell('D', 'Q', 'Battering Charge', 3, 'Your Siege units may act again and get +2 attack.', [{ op: 'ready', to: 'allySuit', suit: 'D' }, { op: 'buff', atk: 2, hp: 0, to: 'allySuit', suit: 'D' }]);
+  unit('D', 'K', 'Siege Master', 4, 3, 6, 0, { kw: B, text: 'Play: your Siege units get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'allySuit', suit: 'D' }] });
+
+  // ♠ Defence — fortresses and defensive boosts
+  unit('S', 'A', 'Palisade', 1, 0, 5, 1);
+  unit('S', '2', 'Stone Wall', 2, 0, 7, 2);
+  unit('S', '3', 'Bulwark', 3, 1, 9, 2);
+  unit('S', '4', 'Fortress', 4, 2, 12, 3);
+  unit('S', '5', 'Citadel', 6, 3, 16, 4);
+  spell('S', '6', 'Field Hospital', 2, 'Your king heals 6.', [{ op: 'healKing', n: 6 }]);
+  spell('S', '7', 'Fortify', 1, 'A unit gets +3 health and +1 armour.', [{ op: 'buff', atk: 0, hp: 3, armor: 1, to: 'target' }], { target: 'allyUnit' });
+  spell('S', '8', 'Shield Wall', 4, 'All your units get +1 armour.', [{ op: 'buff', atk: 0, hp: 0, armor: 1, to: 'allyUnits' }]);
+  spell('S', '9', 'Reinforce', 3, 'Restore all your units to full health.', [{ op: 'healAll' }]);
+  spell('S', '10', 'Royal Guard', 3, 'Your king gets +2 armour.', [{ op: 'kingArmor', n: 2 }]);
+  unit('S', 'J', 'Bodyguard', 3, 2, 6, 2, { text: 'Play: your king heals 4.', effects: [{ op: 'healKing', n: 4 }] });
+  spell('S', 'Q', 'Engineers', 3, 'Your Defence units get +3 health.', [{ op: 'buff', atk: 0, hp: 3, to: 'allySuit', suit: 'S' }]);
+  unit('S', 'K', 'Warlord', 5, 3, 10, 3, { text: 'Play: your king gets +1 armour.', effects: [{ op: 'kingArmor', n: 1 }] });
+
+  // ♣ Offence — boosts for your infantry and commanders
+  spell('C', 'A', 'Rally', 1, 'Your infantry get +1 attack.', [{ op: 'buff', atk: 1, hp: 0, to: 'allyInf' }]);
+  spell('C', '2', 'Sharpen Blades', 1, 'A unit gets +2 attack.', [{ op: 'buff', atk: 2, hp: 0, to: 'target' }], { target: 'allyUnit' });
+  spell('C', '3', 'Forced March', 2, 'Deploy 1 extra infantry this turn.', [{ op: 'deploy', n: 1 }]);
+  spell('C', '4', 'Charge', 2, 'A unit may act again and gets +1 attack.', [{ op: 'ready', to: 'target' }, { op: 'buff', atk: 1, hp: 0, to: 'target' }], { target: 'allyUnit' });
+  spell('C', '5', 'Warhorn', 3, 'All your units get +1/+1.', [{ op: 'buff', atk: 1, hp: 1, to: 'allyUnits' }]);
+  spell('C', '6', 'Berserk', 2, 'An infantry gets +3 attack.', [{ op: 'buff', atk: 3, hp: 0, to: 'target' }], { target: 'allyInf' });
+  spell('C', '7', 'Reinforcements', 3, 'Deploy 2 extra infantry this turn.', [{ op: 'deploy', n: 2 }]);
+  spell('C', '8', 'Conscription', 4, 'Immediately deploy 3 infantry.', [{ op: 'summonInf', n: 3 }]);
+  spell('C', '9', 'Battle Cry', 4, 'All your units may act again.', [{ op: 'ready', to: 'allyUnits' }]);
+  spell('C', '10', 'Drums of War', 4, 'Your infantry get +2 attack.', [{ op: 'buff', atk: 2, hp: 0, to: 'allyInf' }]);
+  unit('C', 'J', 'Champion', 4, 5, 4, 0, { kw: ['swift'] });
+  unit('C', 'Q', 'Captain', 3, 3, 4, 0, { text: 'Play: your infantry get +1 attack.', effects: [{ op: 'buff', atk: 1, hp: 0, to: 'allyInf' }] });
+  unit('C', 'K', 'General', 5, 4, 6, 0, { text: 'Play: all your units get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'allyUnits' }] });
+
+  // ♥ Long range — artillery that safely thins infantry, plus tactics
+  unit('H', 'A', 'Watchtower', 2, 2, 4, 0, { kw: R });
+  unit('H', '2', 'Longbowmen', 3, 3, 3, 0, { kw: R });
+  unit('H', '3', 'Crossbow Battery', 3, 4, 3, 0, { kw: R });
+  unit('H', '4', 'Heavy Crossbow', 4, 5, 4, 0, { kw: R });
+  unit('H', '5', 'Siege Archers', 5, 6, 4, 0, { kw: R });
+  spell('H', '6', 'Eagle Eye', 3, 'Deal 3 damage to any enemy unit.', [{ op: 'damage', n: 3, to: 'target' }], { target: 'enemyUnit' });
+  spell('H', '7', 'Volley', 3, 'Deal 2 damage to all enemy infantry.', [{ op: 'damage', n: 2, to: 'enemyInf' }]);
+  spell('H', '8', 'Arrow Storm', 5, 'Deal 3 damage to all enemy units.', [{ op: 'damage', n: 3, to: 'enemyUnits' }]);
+  spell('H', '9', 'Fire Arrows', 2, 'Deal 4 damage to an enemy infantry.', [{ op: 'damage', n: 4, to: 'target' }], { target: 'enemyInf' });
+  spell('H', '10', 'Spyglass', 2, 'Draw 2 cards.', [{ op: 'draw', n: 2 }]);
+  unit('H', 'J', 'Marksman', 4, 4, 2, 0, { kw: R, target: 'enemyFront', text: 'Play: deal 2 damage to an enemy front-row unit.', effects: [{ op: 'damage', n: 2, to: 'target' }] });
+  spell('H', 'Q', 'Scout Report', 1, 'Draw a card.', [{ op: 'draw', n: 1 }]);
+  unit('H', 'K', 'Master Archer', 6, 6, 5, 0, { kw: R });
+
+  const DECK = Object.keys(CARDS).filter((id) => !CARDS[id].inf);
 
   // ---------------------------------------------------------------- helpers
   function rand(state) { // mulberry32
@@ -86,6 +123,7 @@
   const locEq = (a, b) => !!a && !!b && a.r === b.r && a.i === b.i;
   const clone = (state) => { const l = state.log; state.log = null; const c = JSON.parse(JSON.stringify(state)); state.log = l; return c; };
   function log(state, msg) { if (state.log) { state.log.push(msg); if (state.log.length > 100) state.log.shift(); } }
+  const cardLabel = (c) => (c.suit ? `${SYM[c.suit]}${c.rank} ` : '') + c.name;
 
   const rowLen = (r) => (r === 0 ? FRONT : BACK);
   const colOf = (r, i) => (r === 0 ? i : i + 1);
@@ -94,29 +132,17 @@
   const isKing = (u) => !!u && u.id === 'KING';
   const hasKw = (u, kw) => CARDS[u.id].kw.includes(kw);
   const suitOf = (u) => CARDS[u.id].suit;
-  const unitName = (state, ref) => CARDS[unitOf(state, ref).id].name;
+  const isInf = (u) => !!CARDS[u.id].inf;
+  const atkOf = (state, p, r, i) => { const u = unitAt(state, p, r, i); return u ? u.atk : 0; };
 
-  function atkOf(state, p, r, i) {
-    const u = unitAt(state, p, r, i);
-    if (!u) return 0;
-    let a = u.atk;
-    if (hasKw(u, 'swarm')) {
-      for (const d of [-1, 1]) { const n = unitAt(state, p, r, i + d); if (n && suitOf(n) === 'C') a += 1; }
-    }
-    return a;
-  }
+  CARDS.KING = { id: 'KING', kind: 'king', name: 'King', cost: 0, atk: 0, hp: KING_HP, armor: 0, kw: [], text: 'Lose your king and you lose the game.' };
 
   function attackDamage(att, atkVal, def) {
     if (hasKw(att, 'breach')) return suitOf(def) === 'S' ? atkVal * 2 : atkVal;
     return Math.max(0, atkVal - def.armor);
   }
+  const makeUnit = (state, id) => { const c = CARDS[id]; return { uid: ++state.uid, id, atk: c.atk, hp: c.hp, maxHp: c.hp, armor: c.armor, ready: false }; };
 
-  function makeUnit(state, id) {
-    const c = CARDS[id];
-    return { uid: ++state.uid, id, atk: c.atk, hp: c.hp, maxHp: c.hp, armor: c.armor, ready: false };
-  }
-
-  // The first unit an attacker finds in a column: front row first, then the back row behind it.
   function firstInColumn(state, p, col) {
     if (col < 0 || col >= FRONT) return null;
     if (state.players[p].rows[0][col]) return { p, r: 0, i: col };
@@ -130,12 +156,11 @@
     const state = { rng: seed | 0, turn: 1, active: 0, winner: null, reason: '', uid: 0, log: [], players: [] };
     for (let p = 0; p < 2; p++) {
       const rows = [new Array(FRONT).fill(null), new Array(BACK).fill(null)];
-      const pl = { mana: 0, maxMana: 0, deck: shuffle(state, DECK.slice()), hand: [], rows };
       rows[1][KING_I] = { uid: ++state.uid, id: 'KING', atk: 0, hp: KING_HP, maxHp: KING_HP, armor: 0, ready: false };
-      state.players.push(pl);
+      state.players.push({ mana: 0, maxMana: 0, deploys: 0, deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [], rows });
     }
-    for (let i = 0; i < 4; i++) draw(state, 0);
-    for (let i = 0; i < 5; i++) draw(state, 1);
+    for (let i = 0; i < 3; i++) draw(state, 0);
+    for (let i = 0; i < 4; i++) draw(state, 1);
     startTurn(state);
     return state;
   }
@@ -158,6 +183,7 @@
     const pl = state.players[state.active];
     pl.maxMana = Math.min(MAX_MANA, pl.maxMana + 1);
     pl.mana = pl.maxMana;
+    pl.deploys = state.active === 1 && pl.maxMana === 1 ? 2 : 1; // the second player's first turn gets a bonus deploy
     pl.rows.forEach((row) => row.forEach((u) => { if (u) u.ready = true; }));
     log(state, `— Turn ${state.turn}: Player ${state.active + 1} —`);
     draw(state, state.active);
@@ -189,35 +215,59 @@
   }
 
   function validTargets(state, p, kind) {
-    const foe = allUnits(state, 1 - p);
-    if (kind === 'enemyFront') return foe.filter((x) => x.r === 0);
-    if (kind === 'enemyUnit') return foe;
-    if (kind === 'enemySpade') return foe.filter((x) => suitOf(unitOf(state, x)) === 'S');
-    return [];
+    const ally = kind.startsWith('ally'), side = ally ? p : 1 - p;
+    let refs = allUnits(state, side);
+    if (kind.endsWith('Inf')) refs = refs.filter((x) => isInf(unitOf(state, x)));
+    if (kind === 'enemyFront') refs = refs.filter((x) => x.r === 0);
+    return refs;
+  }
+
+  function resolveTargets(state, e, ctx) {
+    const p = ctx.p;
+    switch (e.to) {
+      case 'target': return ctx.target && unitOf(state, ctx.target) ? [ctx.target] : [];
+      case 'allyUnits': return allUnits(state, p);
+      case 'allyInf': return allUnits(state, p).filter((x) => isInf(unitOf(state, x)));
+      case 'allySuit': return allUnits(state, p).filter((x) => suitOf(unitOf(state, x)) === e.suit);
+      case 'enemyInf': return allUnits(state, 1 - p).filter((x) => isInf(unitOf(state, x)));
+      case 'enemyUnits': return allUnits(state, 1 - p);
+      default: return [];
+    }
+  }
+
+  function deployInfantry(state, p, cell) {
+    const pl = state.players[p];
+    const id = pl.infDeck.pop();
+    pl.rows[cell.r][cell.i] = makeUnit(state, id);
+    return CARDS[id];
   }
 
   function runEffects(state, effects, ctx) {
     for (const e of effects) {
-      const king = state.players[ctx.p].rows[1][KING_I];
-      if (e.op === 'draw') { for (let k = 0; k < e.n; k++) draw(state, ctx.p); }
-      else if (e.op === 'healKing') king.hp = Math.min(king.maxHp, king.hp + e.n);
-      else if (e.op === 'kingArmor') king.armor += e.n;
-      else if (e.op === 'buff' || e.op === 'ready') {
-        for (const ref of allUnits(state, ctx.p)) {
-          const u = unitOf(state, ref);
-          if (suitOf(u) !== e.suit) continue;
-          if (e.op === 'ready') u.ready = true;
-          else { u.atk += e.atk; u.hp += e.hp; u.maxHp += e.hp; }
+      const pl = state.players[ctx.p], king = pl.rows[1][KING_I];
+      switch (e.op) {
+        case 'draw': for (let k = 0; k < e.n; k++) draw(state, ctx.p); break;
+        case 'healKing': king.hp = Math.min(king.maxHp, king.hp + e.n); break;
+        case 'kingArmor': king.armor += e.n; break;
+        case 'deploy': pl.deploys += e.n; break;
+        case 'healAll': for (const ref of allUnits(state, ctx.p)) { const u = unitOf(state, ref); u.hp = u.maxHp; } break;
+        case 'summonInf': {
+          const free = [];
+          pl.rows[0].forEach((u, i) => { if (!u) free.push(i); });
+          free.sort((a, b) => Math.abs(a - 3) - Math.abs(b - 3) || a - b);
+          for (const i of free.slice(0, Math.min(e.n, pl.infDeck.length))) { const c = deployInfantry(state, ctx.p, { r: 0, i }); log(state, `${c.name} is conscripted.`); }
+          break;
         }
-      } else if (e.op === 'damage') {
-        const refs = e.to === 'target' ? (ctx.target ? [ctx.target] : [])
-          : allUnits(state, 1 - ctx.p).filter((x) => suitOf(unitOf(state, x)) === e.suit);
-        for (const ref of refs) { const u = unitOf(state, ref); if (u) u.hp -= e.n; }
-      } else if (e.op === 'summon') {
-        const free = [];
-        state.players[ctx.p].rows[0].forEach((u, i) => { if (!u) free.push(i); });
-        free.sort((a, b) => Math.abs(a - ctx.col) - Math.abs(b - ctx.col) || a - b);
-        free.slice(0, e.n).forEach((i) => { state.players[ctx.p].rows[0][i] = makeUnit(state, 'TOK'); });
+        case 'damage': for (const ref of resolveTargets(state, e, ctx)) unitOf(state, ref).hp -= e.n; break;
+        case 'heal': for (const ref of resolveTargets(state, e, ctx)) { const u = unitOf(state, ref); u.hp = Math.min(u.maxHp, u.hp + e.n); } break;
+        case 'ready': for (const ref of resolveTargets(state, e, ctx)) unitOf(state, ref).ready = true; break;
+        case 'buff':
+          for (const ref of resolveTargets(state, e, ctx)) {
+            const u = unitOf(state, ref);
+            u.atk += e.atk || 0; u.hp += e.hp || 0; u.maxHp += e.hp || 0; u.armor += e.armor || 0;
+          }
+          break;
+        default: break;
       }
     }
   }
@@ -242,10 +292,17 @@
     const empty = [];
     me.rows.forEach((row, r) => row.forEach((u, i) => { if (!u) empty.push({ r, i }); }));
 
+    if (me.deploys > 0 && me.infDeck.length) for (const cell of empty) acts.push({ t: 'deploy', cell });
+
     me.hand.forEach((id, h) => {
       const c = CARDS[id];
       if (c.cost > me.mana) return;
       const targets = c.target ? validTargets(state, p, c.target) : [];
+      if (c.kind === 'spell') {
+        if (c.target) targets.forEach((target) => acts.push({ t: 'play', hand: h, target }));
+        else acts.push({ t: 'play', hand: h });
+        return;
+      }
       for (const cell of empty) {
         if (targets.length) targets.forEach((target) => acts.push({ t: 'play', hand: h, cell, target }));
         else acts.push({ t: 'play', hand: h, cell });
@@ -263,6 +320,8 @@
     return acts;
   }
 
+  const slotName = (c) => `${c.r === 0 ? 'front' : 'back'} ${c.i + 1}`;
+
   function applyAction(state, a) {
     const key = JSON.stringify(a);
     if (!legalActions(state).some((x) => JSON.stringify(x) === key)) throw new Error('Illegal action ' + key);
@@ -275,21 +334,29 @@
       return state;
     }
 
-    if (a.t === 'play') {
+    if (a.t === 'deploy') {
+      me.deploys--;
+      const c = deployInfantry(state, p, a.cell);
+      log(state, `Player ${p + 1} deploys ${c.name} (${slotName(a.cell)}).`);
+    } else if (a.t === 'play') {
       const id = me.hand[a.hand], c = CARDS[id];
       me.hand.splice(a.hand, 1);
       me.mana -= c.cost;
-      const u = makeUnit(state, id);
-      u.ready = c.kw.includes('swift');
-      me.rows[a.cell.r][a.cell.i] = u;
-      log(state, `Player ${p + 1} plays ${SYM[c.suit]}${c.rank} ${c.name} (${a.cell.r === 0 ? 'front' : 'back'} ${a.cell.i + 1}).`);
-      if (c.effects) runEffects(state, c.effects, { p, col: colOf(a.cell.r, a.cell.i), target: a.target });
+      if (c.kind === 'unit') {
+        const u = makeUnit(state, id);
+        u.ready = c.kw.includes('swift');
+        me.rows[a.cell.r][a.cell.i] = u;
+        log(state, `Player ${p + 1} plays ${cardLabel(c)} (${slotName(a.cell)}).`);
+      } else {
+        log(state, `Player ${p + 1} casts ${cardLabel(c)}.`);
+      }
+      if (c.effects) runEffects(state, c.effects, { p, target: a.target });
     } else if (a.t === 'move') {
       const u = me.rows[a.from.r][a.from.i];
       me.rows[a.from.r][a.from.i] = null;
       me.rows[a.cell.r][a.cell.i] = u;
       u.ready = false;
-      log(state, `${CARDS[u.id].name} moves to ${a.cell.r === 0 ? 'front' : 'back'} ${a.cell.i + 1}.`);
+      log(state, `${CARDS[u.id].name} moves to ${slotName(a.cell)}.`);
     } else if (a.t === 'attack') {
       const att = me.rows[a.from.r][a.from.i], def = unitOf(state, a.target);
       const atkVal = atkOf(state, p, a.from.r, a.from.i);
@@ -308,7 +375,7 @@
     return state;
   }
 
-  const api = { FRONT, BACK, KING_I, KING_HP, HAND_MAX, MAX_MANA, SYM, SUIT_ROLE, CARDS, DECK, newGame, legalActions, applyAction, clone, atkOf, hasKw, suitOf, isKing, sameRef, locEq, unitAt, unitOf, colOf, firstInColumn };
+  const api = { FRONT, BACK, KING_I, KING_HP, HAND_MAX, MAX_MANA, SYM, SUIT_ROLE, CLS_SYM, CARDS, DECK, INF_DECK, newGame, legalActions, applyAction, clone, atkOf, hasKw, suitOf, isKing, isInf, sameRef, locEq, unitAt, unitOf, colOf, firstInColumn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TBC = api;
 })(typeof window !== 'undefined' ? window : globalThis);

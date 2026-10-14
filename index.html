@@ -36,12 +36,17 @@
   button { background:var(--gold); color:#111; border:0; border-radius:8px; padding:9px 18px; font-weight:800; font-size:14px; cursor:pointer; }
   button:disabled { background:#444; color:#888; cursor:default; }
   #hint { color:var(--dim); }
-  #hand { display:flex; gap:8px; justify-content:center; min-height:176px; flex-wrap:wrap; padding-top:8px; }
+  #handrow { display:flex; gap:16px; align-items:flex-start; padding-top:8px; }
+  #infantry { padding-right:16px; border-right:1px solid var(--line); }
+  #hand { display:flex; gap:8px; flex:1; min-height:176px; flex-wrap:wrap; }
   .card { width:112px; height:166px; background:linear-gradient(#303853,#232a3d); border:2px solid var(--line); border-top:5px solid var(--line); border-radius:9px; padding:6px; position:relative; display:flex; flex-direction:column; gap:3px; }
   .card.S { border-top-color:var(--S); } .card.C { border-top-color:var(--C); } .card.D { border-top-color:var(--D); } .card.H { border-top-color:var(--H); }
   .card.playable { border-color:var(--ok); cursor:pointer; }
   .card.selected { border-color:#fff; transform:translateY(-8px); }
   .card.dim { opacity:.55; }
+  .card.inf { border-top-color:#c9ccd6; background:linear-gradient(#2d3342,#222733); }
+  .card.inf .cost { width:auto; border-radius:12px; padding:0 8px; background:#2c8c5a; font-size:11px; }
+  .unit.I { border-top-color:#c9ccd6; }
   .card .cost { position:absolute; top:-10px; right:-8px; width:26px; height:26px; border-radius:50%; background:#3d6dff; display:flex; align-items:center; justify-content:center; font-weight:800; border:2px solid #fff; }
   .card .top { font-weight:800; font-size:14px; } .card .top.red { color:#ff7b7b; }
   .card .nm { text-align:center; font-weight:700; }
@@ -72,19 +77,17 @@
     <div class="rowlabel">Your back row</div><div class="row mine" id="myBack"></div>
     <div id="myBar" class="bar"></div>
     <div id="mid"><span id="hint"></span><button id="endBtn">End turn</button></div>
-    <div id="hand"></div>
+    <div id="handrow"><div id="infantry"></div><div id="hand"></div></div>
   </div>
   <div id="side">
     <h3>Battle log</h3>
     <div id="log"></div>
     <div id="help">
       <b>Win:</b> destroy the enemy king, or make them run out of cards.<br>
-      Play a card, then pick a slot (and target). Click a green unit to attack or move.
-      Melee in the front row hits the first unit in its own or neighbouring columns. Back-row melee is boxed in.<br>
-      <b class="S">♠ Defence</b> armour cuts each hit.
-      <b class="C">♣ Swarm</b> +1 attack per adjacent club.
-      <b class="D">♦ Siege</b> ignores armour, double vs ♠.
-      <b class="H">♥ Ranged</b> hits any column, no retaliation, can't hit the king.
+      Each turn: <b>deploy your next infantry</b> (free), draw a card, and spend mana on cards from your hand. Click a green unit to attack or move.
+      Melee in the front row hits the first unit in its own or neighbouring columns. Back-row melee is boxed in. Armour cuts each hit.<br>
+      <b>Infantry:</b> ⚔ melee · ➶ ranged (any column, no retaliation, can't hit the king) · ▣ defence (armour 1).<br>
+      <b class="D">♦ Siege</b> breach: ignores armour. <b class="S">♠ Defence</b> fortresses &amp; healing. <b class="C">♣ Offence</b> boosts &amp; extra deploys. <b class="H">♥ Long range</b> artillery &amp; tactics.
       Right-click / Esc cancels.
     </div>
   </div>

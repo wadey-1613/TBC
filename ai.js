@@ -6,17 +6,18 @@
 
   function sideScore(s, p) {
     const pl = s.players[p], foe = s.players[1 - p];
-    let v = pl.rows[1][KING_I].hp * 3 + pl.hand.length * 1.5 - pl.mana * 0.4 + pl.deck.length * 0.05;
+    let v = pl.rows[1][KING_I].hp * 3 + pl.rows[1][KING_I].armor * 4 + pl.hand.length * 2 - pl.mana * 0.4;
     for (let r = 0; r < 2; r++) {
       const len = r === 0 ? FRONT : BACK;
       for (let i = 0; i < len; i++) {
         const u = pl.rows[r][i];
         if (!u || E.isKing(u)) continue;
         const atk = E.atkOf(s, p, r, i);
-        v += atk + u.hp * 0.8 + u.armor * 1.5;
-        if (E.hasKw(u, 'ranged')) { v += 1; if (r === 1) v += 1; }          // archers are safest behind the line
+        v += atk * 1.2 + u.hp * 0.8 + u.armor * 1.5;
+        if (E.hasKw(u, 'ranged')) { v += 1; if (r === 1) v += 1.5; }          // artillery is safest behind the line
+        else if (r === 1) v -= 1.5;                                            // melee in the back is boxed in
         if (r === 0 && i >= 2 && i <= 4) v += (i === 3 ? 3 : 1.5) * (u.armor > 0 ? 1 : 0.5); // screen the king
-        if (r === 0 && !foe.rows[0][i]) v += atk * 0.3;                      // open column = pressure
+        if (r === 0 && !foe.rows[0][i]) v += atk * 0.3;                         // open column = pressure
       }
     }
     return v;

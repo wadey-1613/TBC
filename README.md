@@ -1,30 +1,42 @@
 # TBC — King's Table (prototype)
 
-Two-player tactical card game played with a standard 52-card deck. Open `index.html` to play against the AI.
-`node test.js` runs the rules tests and AI/random playouts.
+Two-player tactical card game. Open `index.html` to play against the AI. `node test.js` runs rules tests and playouts.
+
+## Two piles per player
+- **Infantry deck (36)** — small melee / ranged / defence units. **Free.** Each turn you deploy the top card (it's face-up, so you can plan). The deck can run out.
+- **Card deck (52, standard suits)** — drawn to your hand, cost mana. Big units, boosts and tactics.
 
 ## Board (per player)
 ```
 back row:        [ ] [ ] [K] [ ] [ ]        king in the middle, 2 flank slots each side
 front row:   [ ][ ][ ][ ][ ][ ][ ]          7 slots
 ```
-Any card can go in any empty slot. Units may move one slot (sideways, or between rows) instead of attacking.
+Cards can be placed in any empty slot. Units may move one slot instead of attacking.
 
-## Rules
-- Win by destroying the enemy king (30 HP), or when the opponent must draw from an empty deck.
-- Mana: +1 per turn up to 10. Every card is a unit with a mana cost. Hand limit 8.
-- Melee units in the front row hit the **first unit** (front row, then the back row behind it) in their own or a neighbouring column. Melee units in the back row can't attack. Defenders strike back.
-- The king can only be reached when the column in front of it is open.
+## Turn
+1. Mana +1 (max 10), your units wake up, draw 1 card.
+2. Deploy your next infantry (free, once per turn). The second player's first turn gets 2 deploys.
+3. Play cards, attack, move. End turn.
 
-## Suits
-| Suit | Role | Trait |
+## Combat
+- Melee units in the front row hit the **first unit** (front, then the back row behind it) in their own or a neighbouring column. Back-row melee can't attack. Defenders strike back.
+- **Armour** reduces every hit by N. **Breach** (siege) ignores armour, doubles vs ♠. **Ranged** hits any column, takes no retaliation, can't target the king.
+- Win by destroying the enemy king (30 HP) or when the opponent must draw from an empty card deck.
+
+## Infantry
+| Class | Cards | Notes |
 |---|---|---|
-| ♠ | Defence | Armour: every hit is reduced by N. Place in front of the king. |
-| ♣ | Small offence | Swarm: +1 attack per adjacent club. Cheap, overloads the table; useless against armour. |
-| ♦ | Large offence | Breach: ignores armour, double damage to ♠. Expensive. |
-| ♥ | Long range | Hits any column, no retaliation, can't target the king. Fragile; safest in the back row. |
+| ⚔ Melee | Swordsman 2/2, Brute 3/1, Spearman 1/3 | cheap damage |
+| ➶ Ranged | Archer 2/1, Slinger 1/2 | pick off units from behind the line |
+| ▣ Defence | Shieldman 1/3, Guard 0/4, Pikeman 2/2 | armour 1 |
 
-Face cards (J/Q/K) and some others have play effects (heal king, summon, area damage, draw...).
+## Hand deck suits
+| Suit | Role |
+|---|---|
+| ♦ | **Siege** — big breach units (up to 12/10) and siege tactics |
+| ♠ | **Defence** — fortresses with heavy armour, king healing, armour boosts |
+| ♣ | **Offence** — infantry boosts, extra deploys, conscription, commanders |
+| ♥ | **Long range** — artillery, volleys, card draw |
 
 ## Files
-`engine.js` rules + card table · `ai.js` greedy AI · `ui.js`/`index.html` browser UI · `test.js` tests
+`engine.js` rules + card tables · `ai.js` greedy AI · `ui.js`/`index.html` browser UI · `test.js` tests
