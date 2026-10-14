@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TBC — Lane Cards</title>
+<style>
+  :root { --bg:#14161d; --panel:#1d212c; --line:#323a4d; --text:#e8ebf2; --dim:#8b94ab; --gold:#f2c14e; --me:#4aa3ff; --foe:#ff6b6b; --ok:#5fd38d; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.3 system-ui,sans-serif; user-select:none; }
+  #app { display:grid; grid-template-columns: 1fr 260px; gap:12px; max-width:1100px; margin:0 auto; padding:12px; }
+  #table { display:flex; flex-direction:column; gap:8px; }
+  .hero { display:flex; align-items:center; gap:14px; background:var(--panel); border:2px solid var(--line); border-radius:10px; padding:8px 14px; }
+  .hero.target { border-color:var(--gold); cursor:pointer; box-shadow:0 0 12px var(--gold); }
+  .hero .name { font-weight:700; width:90px; }
+  .hero .hp { font-size:22px; font-weight:800; color:var(--ok); }
+  .hero .hp.low { color:var(--foe); }
+  .hero .meta { color:var(--dim); }
+  .hero .grow { flex:1; }
+  .active-badge { color:var(--gold); font-weight:700; }
+  .row { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
+  .lane-label { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; text-align:center; color:var(--dim); font-size:11px; }
+  .cell { height:140px; border:2px dashed var(--line); border-radius:10px; position:relative; }
+  .cell.dest { border-color:var(--gold); background:rgba(242,193,78,.1); cursor:pointer; }
+  .minion { position:absolute; inset:0; border-radius:8px; padding:6px; display:flex; flex-direction:column; justify-content:space-between; background:linear-gradient(#2a3042,#222838); }
+  .mine .minion { box-shadow: inset 0 0 0 2px var(--me); }
+  .theirs .minion { box-shadow: inset 0 0 0 2px var(--foe); }
+  .minion.ready { box-shadow: inset 0 0 0 3px var(--ok); cursor:pointer; }
+  .minion.selected { box-shadow: inset 0 0 0 3px #fff; }
+  .minion.target { box-shadow: inset 0 0 0 3px var(--gold), 0 0 12px var(--gold); cursor:pointer; }
+  .minion.ward::after { content:''; position:absolute; inset:-3px; border:3px solid #7fdcff; border-radius:11px; pointer-events:none; opacity:.8; }
+  .minion .nm { font-weight:700; font-size:13px; text-align:center; }
+  .minion .tx { font-size:11px; color:var(--dim); text-align:center; }
+  .minion .tags { font-size:10px; color:var(--gold); text-align:center; text-transform:uppercase; }
+  .minion .st { display:flex; justify-content:space-between; font-size:20px; font-weight:800; }
+  .st .a { color:#ffb454; } .st .h { color:var(--ok); } .st .h.hurt { color:var(--foe); } .st .a.buffed { color:var(--gold); }
+  #mid { display:flex; justify-content:space-between; align-items:center; padding:2px 4px; }
+  button { background:var(--gold); color:#111; border:0; border-radius:8px; padding:10px 18px; font-weight:800; font-size:14px; cursor:pointer; }
+  button:disabled { background:#444; color:#888; cursor:default; }
+  #hint { color:var(--dim); }
+  #hand { display:flex; gap:8px; justify-content:center; min-height:170px; }
+  .card { width:120px; height:164px; background:linear-gradient(#303853,#232a3d); border:2px solid var(--line); border-radius:10px; padding:6px; position:relative; display:flex; flex-direction:column; gap:4px; }
+  .card.playable { border-color:var(--ok); cursor:pointer; }
+  .card.selected { border-color:#fff; transform:translateY(-8px); }
+  .card.dim { opacity:.55; }
+  .card .cost { position:absolute; top:-8px; left:-8px; width:28px; height:28px; border-radius:50%; background:#3d6dff; display:flex; align-items:center; justify-content:center; font-weight:800; border:2px solid #fff; }
+  .card .nm { text-align:center; font-weight:700; margin-top:10px; }
+  .card .ty { text-align:center; font-size:10px; color:var(--dim); text-transform:uppercase; }
+  .card .tx { font-size:11px; color:var(--text); flex:1; text-align:center; }
+  .card .tags { font-size:10px; color:var(--gold); text-align:center; text-transform:uppercase; }
+  .card .st { display:flex; justify-content:space-between; font-size:18px; font-weight:800; min-height:22px; }
+  #side { background:var(--panel); border-radius:10px; padding:10px; height:calc(100vh - 24px); display:flex; flex-direction:column; }
+  #side h3 { margin:0 0 6px; font-size:13px; color:var(--dim); text-transform:uppercase; }
+  #log { overflow:auto; flex:1; font-size:12px; color:var(--dim); }
+  #log div { padding:2px 0; border-bottom:1px solid #262c3b; }
+  #help { font-size:11px; color:var(--dim); margin-top:8px; border-top:1px solid var(--line); padding-top:8px; }
+  #overlay { position:fixed; inset:0; background:rgba(0,0,0,.8); display:none; align-items:center; justify-content:center; z-index:10; }
+  #overlay.show { display:flex; }
+  #overlay .box { background:var(--panel); padding:28px 36px; border-radius:14px; text-align:center; min-width:320px; }
+  #overlay h1 { margin:0 0 6px; } #overlay p { color:var(--dim); }
+  #overlay button { margin:6px; }
+  @media (max-width: 900px) { #app { grid-template-columns:1fr; } #side { height:200px; } .card { width:96px; } .cell { height:120px; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="table">
+    <div id="foeHero" class="hero"></div>
+    <div class="row theirs" id="foeBoard"></div>
+    <div class="lane-label"><span>Lane 1</span><span>Lane 2</span><span>Lane 3</span><span>Lane 4</span><span>Lane 5</span></div>
+    <div class="row mine" id="myBoard"></div>
+    <div id="myHero" class="hero"></div>
+    <div id="mid"><span id="hint"></span><button id="endBtn">End turn</button></div>
+    <div id="hand"></div>
+  </div>
+  <div id="side">
+    <h3>Battle log</h3>
+    <div id="log"></div>
+    <div id="help">
+      <b>How to play</b><br>
+      Click a hand card, then a lane (and a target if needed). Click a green-glow minion to attack or shift lanes.
+      Minions hit the enemy in their own or adjacent lanes; an empty opposing lane lets them hit the hero. Right-click / Esc cancels.
+      <br><b>Swift</b>: acts when played. <b>Ward</b>: blocks one hit. <b>Ranged</b>: any lane, no retaliation.
+    </div>
+  </div>
+</div>
+<div id="overlay"><div class="box" id="overlayBox"></div></div>
+<script src="engine.js"></script>
+<script src="ai.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
