@@ -100,16 +100,28 @@
     if (state.active !== ME) aiLoop();
   }
 
+  // The opponent's turn is replayed action by action so you can follow it. Small bookkeeping actions are quick,
+  // fights and card plays linger a little. Speed can be changed, and Skip finishes the turn at once.
+  const AI_PACE = { attack: 360, play: 480, trap: 340, move: 200, deploy: 260, hold: 120, holdInf: 80, recycle: 80, discardInf: 40, discardSquad: 40, end: 120 };
+  const AI_SPEED = { normal: 1, fast: 0.3, instant: 0 };
+  let aiSpeed = 'normal', aiSkip = false;
+  try { const saved = localStorage.getItem('tbc-ai-speed'); if (saved && saved in AI_SPEED) aiSpeed = saved; } catch (e) { /* storage unavailable */ }
+  const aiDelay = (a) => (aiSkip ? 0 : (AI_PACE[a.t] || 200) * AI_SPEED[aiSpeed]);
+
   function aiLoop() {
-    aiRunning = true;
+    aiRunning = true; aiSkip = false;
+    $('skipBtn').hidden = false;
+    const finish = () => { aiRunning = false; aiSkip = false; $('skipBtn').hidden = true; saveGame(); render(); };
     const step = () => {
-      if (state.winner != null || state.active === ME) { aiRunning = false; saveGame(); return render(); }
-      doAction(AI.chooseAction(state));
+      if (state.winner != null || state.active === ME) return finish();
+      const a = AI.chooseAction(state);
+      doAction(a);
+      if (state.winner != null) { aiRunning = false; $('skipBtn').hidden = true; render(); return showEnd(); }
+      if (state.active === ME) return finish();           // the opponent ended its turn: hand control back immediately
       render();
-      if (state.winner != null) { aiRunning = false; return showEnd(); }
-      setTimeout(step, 650);
+      setTimeout(step, aiDelay(a));
     };
-    setTimeout(step, 500);
+    setTimeout(step, 150 * AI_SPEED[aiSpeed]);
   }
 
   function showEnd() {
@@ -131,7 +143,7 @@
     const seed = (Math.random() * 2 ** 31) | 0;
     state = newGame(seed);
     rec = { id: 'g' + Date.now().toString(36) + '-' + seed, seed, startedAt: Date.now(), actions: [] };
-    setStatus('Game not saved yet. It saves after each round.');
+    setStatus('Starting the game record…'); saveGame();   // saving at the start means any permission prompt appears now, not mid-turn
     if ($('noteBox')) $('noteBox').value = '';
     pending = null; aiRunning = false; prevUnits = new Map(); flagTurn = -1; infSeen = -1; infRoles = [];
     $('overlay').classList.remove('show');
@@ -305,7 +317,7 @@
   function hint() {
     const pl = state.players[ME];
     if (state.winner != null) return state.reason;
-    if (state.active !== ME) return 'Opponent is thinking…';
+    if (state.active !== ME) return 'Opponent is playing… (use Skip, or set the opponent speed, to go faster)';
     if (!pending) {
       const bits = [];
       if (pl.infOffer.length && infDone && canDeploy()) bits.push('place your infantry');
@@ -370,6 +382,9 @@
     if (cell) return onTile({ r: +cell.dataset.r, c: +cell.dataset.c });
   });
   $('noteBtn').onclick = () => { if (rec) { saveGame(); } };
+  $('aiSpeed').value = aiSpeed;
+  $('aiSpeed').onchange = () => { aiSpeed = $('aiSpeed').value; try { localStorage.setItem('tbc-ai-speed', aiSpeed); } catch (e) { /* ignore */ } };
+  $('skipBtn').onclick = () => { aiSkip = true; };
   $('endBtn').onclick = () => { if (myTurn()) run({ t: 'end' }); };
   $('trapBtn').onclick = () => { if (pending && pending.from) { pending = { from: pending.from, mode: pending.mode === 'trap' ? undefined : 'trap' }; render(); } };
   $('placeBtn').onclick = () => { pending = { deploy: 0 }; render(); };

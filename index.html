@@ -52,6 +52,7 @@
   .bar b { color:var(--text); } .bar .grow { flex:1; }
   .active-badge { color:var(--gold); font-weight:700; }
   #actrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  #speedLbl { font-size:11px; color:var(--dim); } #speedLbl select { background:#10131b; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:3px; }
   #hint { color:var(--dim); flex:1; min-width:200px; }
   #hand { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
   .card { height:132px; background:linear-gradient(#303853,#232a3d); border:2px solid var(--line); border-top:5px solid var(--line); border-radius:9px; padding:4px 6px; display:flex; flex-direction:column; gap:2px; min-width:0; position:relative; }
@@ -104,7 +105,7 @@
     <div id="foeBar" class="bar"></div>
     <div id="board"></div>
     <div id="myBar" class="bar"></div>
-    <div id="actrow"><span id="hint"></span><button id="trapBtn" class="alt small" hidden>Lay trap</button><button id="placeBtn" class="alt small" hidden></button><button id="offerBtn" class="alt small" hidden>Squad offer</button><button id="endBtn">End turn</button></div>
+    <div id="actrow"><span id="hint"></span><button id="trapBtn" class="alt small" hidden>Lay trap</button><button id="placeBtn" class="alt small" hidden></button><button id="offerBtn" class="alt small" hidden>Squad offer</button><button id="skipBtn" class="alt small" hidden>Skip opponent</button><label id="speedLbl">Opponent speed <select id="aiSpeed"><option value="normal">Normal</option><option value="fast">Fast</option><option value="instant">Instant</option></select></label><button id="endBtn">End turn</button></div>
     <div id="hand"></div>
   </div>
   <div id="side">

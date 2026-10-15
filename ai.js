@@ -47,9 +47,9 @@
     const p = state.active;
     let best = { t: 'end' }, bestScore = evaluate(state, p) + 0.01;
     for (const a of E.legalActions(state)) {
-      if (a.t === 'end') continue;
+      if (a.t === 'end' || a.t === 'discardInf' || a.t === 'discardSquad') continue;
       const s = E.clone(state);
-      E.applyAction(s, a);
+      E.applyAction(s, a, true);
       const sc = evaluate(s, p);
       if (sc > bestScore) { best = a; bestScore = sc; }
     }

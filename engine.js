@@ -479,9 +479,12 @@
 
   const tileName = (c) => `r${c.r + 1}c${c.c + 1}`;
 
-  function applyAction(state, a) {
-    const key = JSON.stringify(a);
-    if (!legalActions(state).some((x) => JSON.stringify(x) === key)) throw new Error('Illegal action ' + key);
+  // `trusted` skips the legality check; the AI passes it for actions it just took from legalActions()
+  function applyAction(state, a, trusted) {
+    if (!trusted) {
+      const key = JSON.stringify(a);
+      if (!legalActions(state).some((x) => JSON.stringify(x) === key)) throw new Error('Illegal action ' + key);
+    }
     const p = state.active, pl = state.players[p];
 
     if (a.t === 'end') { endTurn(state); return state; }
