@@ -6,7 +6,9 @@
  * Per turn:  you are offered 3 infantry: deploy 1 (free, appears on your back row), recycle 1 to the
  *            bottom of the infantry deck, and the third is discarded
  *            you are offered 2 squad cards: use 1 (play it, or hold it in your hand, max 3), the other is discarded
- *            play at most 1 squad card per turn (the offered one or one from hand)
+ *            infantry offers can also be HELD in your hand (shared hand of max 3)
+ *            you may play 1 card from your hand per turn (a held squad card or a held infantry); playing the
+ *            squad card you were offered this turn doesn't use that up
  *            move up to 3 different units (one step each; rogues two), but only units that were already on the
  *            board when your turn began; anything placed this turn is 'fresh' and can't move
  *            every unit may attack once (free); rogues can't attack but lay one trap each
@@ -256,7 +258,7 @@
     for (let r = 0; r < ROWS; r++) state.board.push(new Array(COLS).fill(null));
     for (let p = 0; p < 2; p++) {
       state.board[backRow(p)][KING_C] = { uid: ++state.uid, id: 'KING', p, atk: 0, hp: KING_HP, maxHp: KING_HP, armor: 0, attacked: true, moved: true, fresh: false, trapped: true, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false };
-      state.players.push({ deploys: 0, moves: 0, squadLeft: 0, recycles: 0, infOffer: [], squadOffer: [], deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [], infDiscard: [], squadDiscard: [] });
+      state.players.push({ deploys: 0, moves: 0, handLeft: 0, recycles: 0, infOfferId: 0, infOffer: [], squadOffer: [], deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [], infDiscard: [], squadDiscard: [] });
     }
     startTurn(state);
     return state;
@@ -284,8 +286,9 @@
     const p = state.active, pl = state.players[p];
     pl.deploys = 1;
     pl.moves = MOVES;
-    pl.squadLeft = 1;
+    pl.handLeft = 1;
     pl.recycles = 1;
+    pl.infOfferId++;
     log(state, `— Turn ${state.turn}: Player ${p + 1} —`);
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       const u = state.board[r][c];
@@ -393,7 +396,7 @@
         case 'kingArmor': king.armor += e.n; break;
         case 'infOffer': {
           for (let k = 0; k < 3 && refill(state, ctx.p, 'infDeck', 'infDiscard'); k++) pl.infOffer.push(pl.infDeck.pop());
-          pl.deploys += 1; pl.recycles += 1;
+          pl.deploys += 1; pl.recycles += 1; pl.infOfferId++;
           break;
         }
         case 'moves': pl.moves += e.n; break;
@@ -431,10 +434,11 @@
     if (pl.deploys > 0) pl.infOffer.forEach((id, pick) => { for (const cell of spawnTilesFor(state, p, id)) acts.push({ t: 'deploy', pick, cell }); });
     if (pl.recycles > 0) pl.infOffer.forEach((id, pick) => acts.push({ t: 'recycle', pick }));
     pl.infOffer.forEach((id, pick) => acts.push({ t: 'discardInf', pick }));
+    if (pl.hand.length < HAND_MAX) pl.infOffer.forEach((id, pick) => acts.push({ t: 'holdInf', pick }));
     pl.squadOffer.forEach((id, pick) => acts.push({ t: 'discardSquad', pick }));
 
-    if (pl.squadLeft > 0) {
-      const sources = pl.hand.map((id, i) => ({ id, i }));
+    {
+      const sources = pl.handLeft > 0 ? pl.hand.map((id, i) => ({ id, i })) : [];
       pl.squadOffer.forEach((id, k) => sources.push({ id, i: -1 - k }));
       for (const { id, i } of sources) {
         const c = CARDS[id];
@@ -491,6 +495,10 @@
       pl.infDeck.unshift(id); // bottom of the deck
       pl.recycles--;
       log(state, `Player ${p + 1} recycles ${CARDS[id].name} to the bottom of the infantry deck.`);
+    } else if (a.t === 'holdInf') {
+      const id = pl.infOffer.splice(a.pick, 1)[0];
+      pl.hand.push(id);
+      log(state, `Player ${p + 1} holds ${CARDS[id].name} in hand.`);
     } else if (a.t === 'discardInf') {
       const id = pl.infOffer.splice(a.pick, 1)[0];
       pl.infDiscard.push(id);
@@ -512,8 +520,7 @@
         id = pl.squadOffer[k];
         pl.squadDiscard.push(...pl.squadOffer.filter((x, j) => j !== k));
         pl.squadOffer = [];
-      } else { id = pl.hand[a.hand]; pl.hand.splice(a.hand, 1); }
-      pl.squadLeft--;
+      } else { id = pl.hand[a.hand]; pl.hand.splice(a.hand, 1); pl.handLeft--; }
       const c = CARDS[id];
       if (c.kind === 'unit') {
         placeUnit(state, p, id, a.cell);

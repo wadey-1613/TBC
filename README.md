@@ -8,8 +8,9 @@ Open `index.html` to play against the AI. `node test.js` runs rules tests and pl
 **Defence** units (▣ infantry and ♠ cards) can also be placed anywhere within 2 tiles of your king.
 
 ## Per turn
-1. **Infantry pop-up (3 cards):** deploy one (free), **recycle** one to the bottom of the infantry deck, the third is **discarded**. Then you place the deployed card on the board.
-2. **Squad pop-up (2 cards):** **play** one now or **hold** it in your hand (max 3). The other is discarded. You can play **one** squad card per turn, the offered one or one from your hand (the hand is always shown under the board).
+1. **Infantry pop-up (3 cards):** for each card choose **deploy** (free, you then place it on the board), **recycle** (to the bottom of the infantry deck, once a turn) or **hold** it in your hand. Anything you leave is **discarded**.
+2. **Squad pop-up (2 cards):** **play** one now or **hold** it in your hand. The other is discarded.
+   Your **hand** holds up to 3 cards (squad cards and infantry together) and is always shown under the board. You may play **one card from your hand per turn**. Playing the squad card you were just offered doesn't use that up, and neither does deploying infantry.
 3. **Move up to 3 units**, one tile each (forward or sideways). Only units that were already on the board when your turn began can move; anything you place this turn is *new*. Rogues move 2 tiles. *Swift* units (Champion) don't use up one of the 3 moves.
 4. **Attack:** every unit may attack once per turn, for free.
 

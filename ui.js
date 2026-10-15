@@ -7,7 +7,7 @@
   let state = null, pending = null, legal = [], aiRunning = false;
   let prevUnits = new Map(), changes = new Map(), deaths = new Map(), reachSet = new Set();
   // pop-up progress for the current turn
-  let flagTurn = -1, infDone = false, squadDone = false, squadForce = false, infPick = { deploy: null, recycle: null }, sqSel = null;
+  let flagTurn = -1, infDone = false, squadDone = false, squadForce = false, infRoles = [], infSeen = -1, sqSel = null;
 
   // ------------------------------------------------------------ selection logic
   // pending = partial action: { hand?, deploy?, from?, mode?, cell?, target? }. Legal actions are filtered by it.
@@ -90,7 +90,7 @@
 
   function start() {
     state = newGame((Math.random() * 2 ** 31) | 0);
-    pending = null; aiRunning = false; prevUnits = new Map(); flagTurn = -1;
+    pending = null; aiRunning = false; prevUnits = new Map(); flagTurn = -1; infSeen = -1; infRoles = [];
     $('overlay').classList.remove('show');
     render();
   }
@@ -194,21 +194,30 @@
   // ------------------------------------------------------------ pop-ups (infantry, then squad)
   const canDeploy = () => legal.some((a) => a.t === 'deploy');
 
+  const roleCount = (role) => infRoles.filter((r) => r === role).length;
+  function roleAllowed(role, i) {
+    if (infRoles[i] === role) return true;                                   // toggling off is always fine
+    const pl = state.players[ME];
+    if (role === 'deploy') return canDeploy() && roleCount('deploy') < pl.deploys;
+    if (role === 'recycle') return roleCount('recycle') < pl.recycles;
+    return roleCount('hold') < HAND_MAX - pl.hand.length;                    // hold
+  }
+
   function infantryPicker() {
-    const pl = state.players[ME], n = pl.infOffer.length, dep = canDeploy();
-    const needRecycle = pl.recycles > 0 && n - (dep ? 1 : 0) >= 1;
-    const { deploy, recycle } = infPick;
-    const ready = (!dep || deploy !== null) && (!needRecycle || recycle !== null);
-    let step = 'Click the infantry you want to deploy.';
-    if (!dep) step = 'There is no room to deploy. Click one to recycle.';
-    else if (deploy !== null && needRecycle && recycle === null) step = 'Now click one to recycle to the bottom of your deck.';
-    else if (ready) step = 'The last card is discarded. Confirm, then place the infantry on your back row.';
+    const pl = state.players[ME];
+    while (infRoles.length < pl.infOffer.length) infRoles.push(null);
+    const nDep = roleCount('deploy');
+    let step = 'Choose what to do with each card. Anything you leave is discarded.';
+    if (!canDeploy()) step = 'There is no room to deploy. You can still recycle or hold. Anything you leave is discarded.';
+    else if (nDep === 0) step = 'Deploy one onto the board, recycle one to the bottom of your deck, or hold one in your hand. The rest are discarded.';
+    const labels = { deploy: 'Deploy', recycle: 'Recycle', hold: 'Hold in hand' };
     const cards = pl.infOffer.map((id, i) => {
-      const role = i === deploy ? 'deploy' : i === recycle ? 'recycle' : ready ? 'discard' : '';
-      return cardHtml(id, { big: true, playable: true, selected: i === deploy || i === recycle, role, attr: `data-ipick="${i}"` });
+      const role = infRoles[i];
+      const btns = ['deploy', 'recycle', 'hold'].map((r) => `<button class="${role === r ? '' : 'alt'}" data-irole="${r}" data-i="${i}" ${roleAllowed(r, i) ? '' : 'disabled'}>${labels[r]}</button>`).join('');
+      return `<div class="pickcol">${cardHtml(id, { big: true, playable: true, selected: !!role, role: role || 'discard' })}${btns}</div>`;
     }).join('');
     $('pickerBox').innerHTML = `<h2>Choose your infantry</h2><p>${step}</p><div class="pickrow">${cards}</div>`
-      + `<div class="btnrow"><button id="infRedo" class="alt" ${deploy === null && recycle === null ? 'disabled' : ''}>Start again</button><button id="infOk" ${ready ? '' : 'disabled'}>Confirm</button></div>`;
+      + `<div class="btnrow"><button id="infRedo" class="alt" ${infRoles.some(Boolean) ? '' : 'disabled'}>Start again</button><button id="infOk">Confirm</button></div>`;
   }
 
   function squadPicker() {
@@ -237,14 +246,18 @@
   }
 
   function confirmInfantry() {
-    const pl = state.players[ME], { deploy, recycle } = infPick;
+    const pl = state.players[ME];
     const moves = [];
-    pl.infOffer.forEach((id, i) => { if (i !== deploy) moves.push({ i, t: i === recycle ? 'recycle' : 'discardInf' }); });
+    pl.infOffer.forEach((id, i) => {
+      const role = infRoles[i];
+      if (role !== 'deploy') moves.push({ i, t: role === 'recycle' ? 'recycle' : role === 'hold' ? 'holdInf' : 'discardInf' });
+    });
     moves.sort((a, b) => b.i - a.i).forEach((m) => applyAction(state, { t: m.t, pick: m.i }));
-    infDone = true; infPick = { deploy: null, recycle: null };
-    pending = deploy !== null ? { deploy: 0 } : null;
+    infDone = true; infRoles = [];
+    pending = pl.infOffer.length > 0 && canDeployNow() ? { deploy: 0 } : null;
     render();
   }
+  const canDeployNow = () => state.players[ME].deploys > 0 && legalActions(state).some((a) => a.t === 'deploy');
 
   function hint() {
     const pl = state.players[ME];
@@ -253,7 +266,7 @@
     if (!pending) {
       const bits = [];
       if (pl.infOffer.length && infDone && canDeploy()) bits.push('place your infantry');
-      return 'Your turn: ' + (bits.length ? bits.join(', ') + '. ' : '') + 'Select a green unit to move or attack (' + pl.moves + ' move' + (pl.moves === 1 ? '' : 's') + ' left), or play a card from your hand.';
+      return 'Your turn: ' + (bits.length ? bits.join(', ') + '. ' : '') + 'Select a green unit to move or attack (' + pl.moves + ' move' + (pl.moves === 1 ? '' : 's') + ' left), or play one card from your hand (1 a turn).';
     }
     if (pending.deploy !== undefined) return 'Choose a tile for the infantry. Defence units can go within 2 tiles of your king.';
     if (pending.hand !== undefined) {
@@ -265,10 +278,10 @@
   }
 
   function render() {
-    if (state.turn !== flagTurn) { flagTurn = state.turn; infDone = false; squadDone = false; squadForce = false; infPick = { deploy: null, recycle: null }; sqSel = null; }
+    if (state.turn !== flagTurn) { flagTurn = state.turn; squadDone = false; squadForce = false; sqSel = null; }
     legal = state.active === ME && state.winner == null ? legalActions(state) : [];
     const pl = state.players[ME];
-    if (infDone && pl.recycles > 0 && pl.infOffer.length >= 2 && !pending) { infDone = false; infPick = { deploy: null, recycle: null }; }   // Reinforcements: a second offer
+    if (pl.infOfferId !== infSeen) { infSeen = pl.infOfferId; infDone = false; infRoles = []; }          // a new turn, or Reinforcements: a fresh infantry offer
     trackChanges();
     $('board').innerHTML = boardHtml();
     $('foeBar').innerHTML = barHtml(1 - ME);
@@ -292,16 +305,13 @@
   // ------------------------------------------------------------ events
   document.addEventListener('click', (e) => {
     const t = e.target;
-    const ip = t.closest('[data-ipick]');
-    if (ip) {
-      const i = +ip.dataset.ipick, dep = canDeploy(), need = state.players[ME].recycles > 0;
-      if (i === infPick.deploy) infPick.deploy = null;
-      else if (i === infPick.recycle) infPick.recycle = null;
-      else if (dep && infPick.deploy === null) infPick.deploy = i;
-      else if (need && infPick.recycle === null) infPick.recycle = i;
+    const ir = t.closest('[data-irole]');
+    if (ir) {
+      const i = +ir.dataset.i, role = ir.dataset.irole;
+      infRoles[i] = infRoles[i] === role ? null : (roleAllowed(role, i) ? role : infRoles[i]);
       return render();
     }
-    if (t.closest('#infRedo')) { infPick = { deploy: null, recycle: null }; return render(); }
+    if (t.closest('#infRedo')) { infRoles = []; return render(); }
     if (t.closest('#infOk')) return confirmInfantry();
     const sq = t.closest('[data-sq]');
     if (sq) { sqSel = +sq.dataset.sq === sqSel ? null : +sq.dataset.sq; return render(); }

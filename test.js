@@ -16,7 +16,7 @@ function checkInvariants(s) {
   assert.strictEqual(kings, 2);
   for (const pl of s.players) {
     assert(pl.hand.length <= E.HAND_MAX, 'hand over 3');
-    assert(pl.deploys >= 0 && pl.moves >= 0 && pl.squadLeft >= 0);
+    assert(pl.deploys >= 0 && pl.moves >= 0 && pl.handLeft >= 0);
   }
 }
 
@@ -41,7 +41,7 @@ assert.strictEqual(E.INF_DECK.length, 36);
 // --- rule spot checks
 function fresh() {
   const s = E.newGame(1);
-  for (const pl of s.players) { pl.hand = []; pl.squadOffer = []; pl.deploys = 1; pl.moves = 3; pl.squadLeft = 1; pl.recycles = 1; }
+  for (const pl of s.players) { pl.hand = []; pl.squadOffer = []; pl.deploys = 1; pl.moves = 3; pl.handLeft = 1; pl.recycles = 1; }
   s.log = [];
   return s;
 }
@@ -74,7 +74,7 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
   const s = fresh();
   E.applyAction(s, acts(s, 'deploy')[0]);
   assert.strictEqual(acts(s, 'move').length, 0, 'freshly deployed infantry cannot move');
-  s.players[0].hand = ['C8']; s.players[0].squadLeft = 1;
+  s.players[0].hand = ['C8']; s.players[0].handLeft = 1;
   E.applyAction(s, { t: 'play', hand: 0 });                  // conscription: 3 more fresh units
   assert.strictEqual(acts(s, 'move').length, 0, 'conscripted units cannot move either');
   E.applyAction(s, { t: 'end' }); E.applyAction(s, { t: 'end' });
@@ -94,12 +94,33 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
   s.players[0].squadOffer = ['D3'];
   assert.strictEqual(acts(s, 'hold').length, 0, 'hand is full');
   E.applyAction(s, acts(s, 'play').find((a) => a.hand === -1));
-  assert.strictEqual(acts(s, 'play').length, 0, 'one squad card per turn');
+  assert(acts(s, 'play').some((a) => a.hand >= 0), 'playing the offered card does not use up the hand play');
+  E.applyAction(s, acts(s, 'play').find((a) => a.hand >= 0));
+  assert.strictEqual(acts(s, 'play').length, 0, 'but only one card from hand per turn');
   const s2 = fresh();
   s2.players[0].squadOffer = ['DA', 'D2'];
   E.applyAction(s2, acts(s2, 'play').find((a) => a.hand === -2));     // field the second offered card
   assert.strictEqual(s2.board[0].filter((u) => u && u.id === 'D2').length, 1);
   assert.deepStrictEqual(s2.players[0].squadDiscard, ['DA'], 'first offered card discarded');
+}
+{ // infantry can be held in hand (shared max 3) and played from hand once per turn
+  const s = E.newGame(5);
+  const pl = s.players[0];
+  const offer = pl.infOffer.slice();
+  E.applyAction(s, E.legalActions(s).find((a) => a.t === 'holdInf' && a.pick === 2));
+  assert.deepStrictEqual(pl.hand, [offer[2]], 'held infantry goes to the hand');
+  E.applyAction(s, E.legalActions(s).find((a) => a.t === 'holdInf' && a.pick === 0));
+  assert.strictEqual(pl.hand.length, 2);
+  pl.hand.push('S2');
+  assert(!E.legalActions(s).some((a) => a.t === 'holdInf'), 'a full hand cannot hold more infantry');
+  pl.hand = [offer[2], 'D2'];
+  const plays = E.legalActions(s).filter((a) => a.t === 'play' && a.hand === 0);
+  assert(plays.length > 0, 'held infantry can be played from hand onto the board');
+  const dep = pl.deploys;
+  E.applyAction(s, plays[0]);
+  assert.strictEqual(pl.deploys, dep, 'playing it from hand does not use the deploy');
+  assert(s.board.flat().some((u) => u && u.fresh && u.id === offer[2]));
+  assert(!E.legalActions(s).some((a) => a.t === 'play' && a.hand >= 0), 'one hand play per turn');
 }
 { // infantry offer: 3 cards, deploy one, recycle one to the bottom, discard the last
   const s = E.newGame(5);
@@ -275,7 +296,7 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
   const s = E.newGame(9);
   const pl = s.players[0];
   const before = pl.infOffer.length;
-  pl.hand = ['C7']; pl.squadLeft = 1;
+  pl.hand = ['C7']; pl.handLeft = 1;
   E.applyAction(s, { t: 'play', hand: 0 });
   assert.strictEqual(pl.infOffer.length, before + 3, '3 more infantry offered');
   assert.strictEqual(pl.deploys, 2); assert.strictEqual(pl.recycles, 2);
