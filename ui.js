@@ -5,6 +5,16 @@
   const ME = 0;
   // card art for the four infantry classes (the published page inlines these as data URIs)
   const ART = window.TBC_ART || { melee: 'art/melee.jpg', ranged: 'art/ranged.jpg', defence: 'art/defence.jpg', rogue: 'art/rogue.jpg' };
+  // squad card art (from the Eternal Legion sheet): card id -> picture number. The picture's tier is the card's rarity.
+  const SQ_ART = {
+    DA: 4, D2: 12, D3: 10, D4: 22, D5: 15, D6: 27, D7: 31, D8: 30, D9: 34, D10: 40, DJ: 25, DQ: 36, DK: 19, DT: 45,
+    SA: 1, S2: 3, S3: 5, S4: 6, S5: 46, S6: 23, S7: 14, S8: 43, S9: 18, S10: 28, SJ: 7, SQ: 29, SK: 24,
+    CA: 21, C2: 37, C3: 52, C4: 20, C5: 48, C6: 39, C7: 50, C8: 32, C9: 41, C10: 44, CJ: 13, CQ: 11, CK: 42, CL: 51, CM: 47,
+    HA: 2, H2: 8, H3: 17, H4: 16, H5: 33, H6: 8, H7: 38, H8: 49, H9: 2, H10: 33, HJ: 26, HQ: 16, HK: 35, SKEL: 1,
+  };
+  const RARITY = (n) => (n <= 4 ? 'Common' : n <= 13 ? 'Uncommon' : n <= 26 ? 'Rare' : n <= 39 ? 'Epic' : 'Legendary');
+  const sqUrl = (n) => (window.TBC_SQART && window.TBC_SQART[n]) || `art/sq/${n}.jpg`;
+  const artFor = (c) => (c.inf ? ART[c.cls] : SQ_ART[c.id] ? sqUrl(SQ_ART[c.id]) : null);
   const $ = (id) => document.getElementById(id);
   let state = null, pending = null, preview = null, legal = [], aiRunning = false, notice = '';
   let prevUnits = new Map(), changes = new Map(), deaths = new Map(), reachSet = new Set();
@@ -261,8 +271,9 @@
     const num = (delta ? `<div class="float ${delta < 0 ? 'dmg' : 'heal'}">${delta > 0 ? '+' : ''}${delta}</div>` : '')
       + (ch.ar ? `<div class="float arm" ${delta ? 'style="top:36px"' : ''}>🛡${ch.ar > 0 ? '+' : ''}${ch.ar}</div>` : '');
     const glyph = isKing(u) ? '♔' : u.legend ? '★' : `${k.rank}${SYM[k.suit]}`;
-    const inner = `<span class="rk">${rk}</span>${tl ? `<span class="tl">${tl}</span>` : ''}${k.inf ? '' : `<span class="gl ${red(k.suit) ? 'red' : ''}">${glyph}</span>`}${gar}`;
-    const art = `<div class="uart${k.inf ? '' : ' glyph'}"${k.inf ? ` style="background-image:url(${ART[k.cls]})"` : ''}>${inner}</div>`;
+    const pic = artFor(k);
+    const inner = `<span class="rk">${rk}</span>${tl ? `<span class="tl">${tl}</span>` : ''}${pic ? '' : `<span class="gl ${red(k.suit) ? 'red' : ''}">${glyph}</span>`}${gar}`;
+    const art = `<div class="uart${pic ? '' : ' glyph'}"${pic ? ` style="background-image:url(${pic})"` : ''}>${inner}</div>`;
     return `<div ${attrs}><div class="${cls}" title="${title}"><div class="nm">${k.name}</div>${art}`
       + `<div class="hpbar"><i class="${barCls}" style="width:${Math.round(ratio * 100)}%"></i></div>${stats}</div>${num}${opHtml}</div>`;
   }
@@ -293,10 +304,11 @@
     const c = CARDS[id];
     const cls = ['card', opts.big ? 'big' : '', c.inf ? 'inf free' : c.suit, opts.playable ? 'playable' : 'dim', opts.selected ? 'selected' : ''].join(' ');
     const top = c.inf ? CLS_SYM[c.cls] : `${c.rank}${SYM[c.suit]}`;
-    const type = c.inf ? `${c.cls} infantry` : `${c.kind === 'spell' ? 'Boost' : 'Unit'} · ${SUIT_ROLE[c.suit]}`;
+    const sa = SQ_ART[id];
+    const type = c.inf ? `${c.cls} infantry` : `${c.kind === 'spell' ? 'Boost' : 'Unit'} · ${SUIT_ROLE[c.suit]}${sa ? ' · ' + RARITY(sa) : ''}`;
     const cost = c.inf ? '<div class="cost">FREE</div>' : `<div class="cost" title="Costs ${c.cost} mana">${c.cost}</div>`;
     return `<div class="${cls}" ${opts.attr || ''} title="${c.name}${c.text ? ': ' + c.text.replace(/"/g, '&quot;') : ''}">${cost}<div class="top ${red(c.suit) ? 'red' : ''}">${top}</div><div class="nm">${c.name}</div>
-      <div class="ty">${type}</div><div class="tags">${kwText(c)}</div>${c.inf ? `<div class="art" style="background-image:url(${ART[c.cls]})"></div>` : `<div class="tx">${c.text}</div>`}${c.kind === 'unit' ? statsHtml(id, null) : '<div class="stats"></div>'}</div>`;
+      <div class="ty">${type}</div><div class="tags">${kwText(c)}</div>${artFor(c) ? `<div class="art" style="background-image:url(${artFor(c)})"></div>` : ''}${c.inf ? '' : opts.big || !artFor(c) ? `<div class="tx">${c.text}</div>` : ''}${c.kind === 'unit' ? statsHtml(id, null) : '<div class="stats"></div>'}</div>`;
   }
 
   function handHtml() {

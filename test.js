@@ -561,6 +561,50 @@ const endTurns = (s, n) => { for (let i = 0; i < n; i++) E.applyAction(s, { t: '
   assert(/tiles/.test(s.reason));
 }
 
+
+// --- arrival effects and death bonuses (r15)
+{ // Heavy arrival effects
+  const s = fresh();
+  put(s, 1, 1, 4, 'iSword');                      // adjacent to the back row spot we play on
+  s.players[0].hand = ['H3'];                     // Crossbow Battery: push adjacent enemies back
+  E.applyAction(s, { t: 'play', hand: 0, cell: { r: 0, c: 4 } });
+  assert(!s.board[1][4] && s.board[2][4] && s.board[2][4].id === 'iSword', 'the adjacent enemy is shoved back one tile');
+  const t = fresh();
+  put(t, 1, 1, 5, 'iTrapper');
+  t.players[0].hand = ['H2'];                     // Longbowmen: reveal hidden enemies within 2
+  E.applyAction(t, { t: 'play', hand: 0, cell: { r: 0, c: 4 } });
+  assert.strictEqual(t.board[1][5].stealth, false);
+  const w = fresh();
+  w.players[0].hand = ['HK'];
+  w.players[0].mana = 10;
+  E.applyAction(w, { t: 'play', hand: 0, cell: { r: 0, c: 1 } });
+  assert(w.traps.some((tr) => tr.p === 0 && tr.type === 'sticky'), 'Master Archer lays a sticky trap next to it');
+}
+{ // death bonuses
+  const s = fresh();
+  put(s, 0, 4, 3, 'D7'); s.board[4][3].hp = 0;    // Trebuchet leaves a skeleton
+  E.applyAction(s, { t: 'end' });
+  assert(s.board[4][3] && s.board[4][3].id === 'SKEL', 'a Skeleton rises');
+  const t = fresh();
+  put(t, 0, 4, 3, 'D3'); put(t, 1, 5, 3, 'iSword'); t.board[4][3].hp = 0;   // Mangonel: 1 damage to adjacent enemies
+  E.applyAction(t, { t: 'end' });
+  assert.strictEqual(t.board[5][3].hp, 1);
+  const u = fresh();
+  put(u, 0, 4, 3, 'S4'); u.board[4][3].hp = 0; u.owner[4][2] = null; u.owner[5][4] = 1;   // Fortress: its land stays yours
+  E.applyAction(u, { t: 'end' });
+  assert.strictEqual(u.owner[4][2], 0); assert.strictEqual(u.owner[5][4], 0);
+  const m = fresh();
+  put(m, 0, 4, 3, 'CK'); m.board[4][3].hp = 0;    // General: +1 mana next turn
+  E.applyAction(m, { t: 'end' }); E.applyAction(m, { t: 'end' });
+  assert.strictEqual(m.players[0].maxMana, Math.min(10, m.players[0].turns) + 1);
+  const c = fresh();
+  put(c, 0, 4, 3, 'D3'); put(c, 1, 5, 3, 'iSword'); put(c, 0, 5, 4, 'D3'); put(c, 1, 4, 4, 'iSword');
+  c.board[4][3].hp = 0; c.board[5][4].hp = 0;
+  E.applyAction(c, { t: 'end' });
+  const hp = [c.board[5][3], c.board[4][4]].map((x) => (x ? x.hp : 0));
+  assert(hp.every((h) => h <= 1), 'both Mangonels fired their death bonus');
+}
+
 // --- playouts
 let wins = [0, 0, 0];
 for (let seed = 1; seed <= 100; seed++) wins[play(seed, randomPick(rng(seed))).winner]++;

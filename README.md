@@ -68,6 +68,12 @@ Destroy the enemy king (30 HP) on their back row, or own more tiles when the 40 
   - 🗡 Rogues ×8 (Poisoner, Trapper, Saboteur, Bomber ×2 each): 1 / 2 / 2, hidden
 - **Squad deck (55):** ♦ Siege (+ Siege Tower) · ♠ Defence walls (4 to 6 health, armour 1 to 4, no attack) · ♣ Offence · ♥ Long range. Units and boosts mixed, plus 2 Land Grabs.
 
+## Arrives and On fall
+Squad units can carry an **Arrives** effect (when played) and an **On fall** bonus (when they die, including from poison or bombs; bonuses can chain).
+- Arrives: **claim** the 8 tiles around it (Ladder Crew, Siege Engine, Colossus) · **shove** adjacent enemies back a tile (Juggernaut, Behemoth, Crossbow Battery) · **reveal** hidden enemies within 2 (Longbowmen, Siege Archers) · **draw** (Heavy Crossbow, Siege Archers) · **heal king** (Citadel) · **Sticky Trap** next to it (Master Archer).
+- On fall: **1 damage** to adjacent enemies (Mangonel, Siege Engine, Behemoth, Colossus) · **poison** them (Ballista Cart, Behemoth) · **Poison Trap** on its tile (Catapult) · **Skeleton** 1/0/1 on its tile (Trebuchet, Juggernaut, Colossus) · adjacent friends **+1 armour** (Bulwark, Citadel) · **land stays yours** (Fortress, Warlord) · **+1 mana** next turn (General).
+- Card art comes from the Eternal Legion sheet (`art/sq/`); the art's tier is the card's rarity label for now (cosmetic).
+
 ## Opponent pacing
 The AI takes about 9 actions a turn and they are replayed one by one so you can follow them. Before it moves it **thinks for a random 1-10 seconds** (a 💭 indicator shows). The side panel's **Opponent** settings (remembered in your browser) choose the pacing: *speed* (Normal / Fast / Instant) and *thinking* (once per turn, before every action, or off). **Skip opponent** ends the thinking and finishes its turn at once.
 

@@ -91,6 +91,7 @@
   .card .nm { text-align:center; font-weight:700; font-size:12px; line-height:1.1; }
   .card .ty { text-align:center; font-size:9px; color:var(--dim); text-transform:uppercase; }
   .card .tx { font-size:10px; flex:1; text-align:center; color:#cfd5e6; overflow:hidden; line-height:1.15; }
+  #hand .card .ty, #hand .card .tags { display:none; } #hand .card .art { min-height:48px; }
   .card .art { flex:1; min-height:34px; border-radius:5px; background-size:cover; background-position:center top; border:1px solid #4a3a6a; }
   .card .tags { font-size:9px; color:var(--gold); text-align:center; text-transform:uppercase; }
   .card .pill { font-size:14px; padding:2px 2px; }
@@ -122,9 +123,9 @@
   #cardView { position:fixed; inset:0; background:rgba(8,10,16,.7); display:none; align-items:center; justify-content:center; z-index:9; padding:16px; }
   #cardView.show { display:flex; }
   #cardView .box { display:flex; flex-direction:column; align-items:center; gap:10px; }
-  #cardView .card.big { width:250px; height:360px; padding:12px 14px; gap:6px; transform:none; cursor:default; }
+  #cardView .card.big { width:280px; height:470px; padding:12px 14px; gap:6px; transform:none; cursor:default; }
   #cardView .card.big .top { font-size:20px; } #cardView .card.big .nm { font-size:22px; } #cardView .card.big .ty { font-size:12px; } #cardView .card.big .tags { font-size:12px; }
-  #cardView .card.big .tx { font-size:15px; } #cardView .card.big .pill { font-size:22px; padding:5px 2px; } #cardView .card.big .art { min-height:150px; }
+  #cardView .card.big .tx { font-size:14px; flex:none; min-height:64px; } #cardView .card.big .art { flex:none; height:215px; width:155px; align-self:center; background-size:cover; background-position:center; } #cardView .card.big .pill { font-size:22px; padding:5px 2px; } 
   #cardView .card .cost { width:32px; height:32px; font-size:17px; top:-12px; left:-12px; }
   #cardView .why { color:var(--gold); min-height:16px; font-size:13px; }
   #overlay { position:fixed; inset:0; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; z-index:10; }
@@ -157,6 +158,7 @@
       New cards appear on your back row. <b>Defence</b> units (▣ and ♠) can also go anywhere within 2 tiles of your king.<br>
       <b>Rogues 🗡</b> start <b>hidden</b>: they can't be targeted. A hidden rogue moves 2 tiles in any direction and has <b>one</b> special action, which reveals it for good:
       lay a trap (☠ Poison 1 damage on each of its next 2 turns · 🕸 Sticky can't move next turn · ✦ Flash can't attack next turn) on an empty tile next to it, throw a 💣 bomb (exactly 2 tiles away, 1 damage to that tile and every tile around it, <i>friends too</i>, ignores armour), or make a <b>sneak attack</b> for double damage. After that it is a plain melee unit. Enemies that step on a trap spring it.<br>
+      <b>Arrives / On fall:</b> many squad units do something when they are played (<i>Arrives</i>: claim tiles, shove enemies, reveal rogues, lay a trap, draw, heal) or when they die (<i>On fall</i>: damage or poison the enemies next to them, leave a Skeleton or a trap, keep their land, armour for friends, +1 mana next turn). Click a card in your hand to read it in full. Each card's art also sets its rarity label.<br>
       <b>Stats:</b> <span style="color:var(--atk)">⚔ attack</span> · <span style="color:var(--arm)">🛡 armour plates</span> · <span style="color:var(--hp)">♥ health</span>.
       <b>Armour</b> is a pool of plates: a normal hit removes half its strength (rounded up) from the plates and leaves health alone; once they're gone, hits go to health at full strength. Siege (♦ breach), poison and bombs ignore armour.<br>
       <b>Walls</b> (♠ cards, the ♦ Siege Tower and ▣ defence infantry) can't attack and take <b>double damage from behind</b>. ▣ Defence infantry counter a melee hit from the front or sides for half its strength (if they survive); ♠ walls never counter. A <b>Siege Tower</b> holds one archer: it shoots from inside, can't be targeted, and drops out if the tower falls.<br>

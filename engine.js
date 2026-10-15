@@ -97,15 +97,15 @@
 
   // ♦ Siege — big units that break defences
   unit('D', 'A', 'Ram', 4, 3, 0, { kw: B });
-  unit('D', '2', 'Ladder Crew', 3, 5, 0, { kw: B });
-  unit('D', '3', 'Mangonel', 5, 3, 0, { kw: B, reach: 'range', text: LOB });
-  unit('D', '4', 'Ballista Cart', 5, 5, 0, { kw: B });
-  unit('D', '5', 'Catapult', 6, 4, 0, { kw: B, reach: 'range', text: LOB });
-  unit('D', '6', 'Siege Engine', 6, 6, 0, { kw: B });
-  unit('D', '7', 'Trebuchet', 8, 4, 0, { kw: B, reach: 'range', text: LOB });
-  unit('D', '8', 'Juggernaut', 8, 7, 0, { kw: B });
-  unit('D', '9', 'Behemoth', 10, 8, 0, { kw: B });
-  unit('D', '10', 'Colossus', 12, 10, 0, { kw: B });
+  unit('D', '2', 'Ladder Crew', 3, 5, 0, { kw: B, effects: [{ op: 'claimAround' }] });
+  unit('D', '3', 'Mangonel', 5, 3, 0, { kw: B, reach: 'range', text: LOB, death: [{ op: 'dmgAdj', n: 1 }] });
+  unit('D', '4', 'Ballista Cart', 5, 5, 0, { kw: B, death: [{ op: 'poisonAdj' }] });
+  unit('D', '5', 'Catapult', 6, 4, 0, { kw: B, reach: 'range', text: LOB, death: [{ op: 'trapHere', type: 'poison' }] });
+  unit('D', '6', 'Siege Engine', 6, 6, 0, { kw: B, effects: [{ op: 'claimAround' }], death: [{ op: 'dmgAdj', n: 1 }] });
+  unit('D', '7', 'Trebuchet', 8, 4, 0, { kw: B, reach: 'range', text: LOB, death: [{ op: 'spawnToken' }] });
+  unit('D', '8', 'Juggernaut', 8, 7, 0, { kw: B, effects: [{ op: 'pushAdj' }], death: [{ op: 'spawnToken' }] });
+  unit('D', '9', 'Behemoth', 10, 8, 0, { kw: B, effects: [{ op: 'pushAdj' }], death: [{ op: 'dmgAdj', n: 1 }, { op: 'poisonAdj' }] });
+  unit('D', '10', 'Colossus', 12, 10, 0, { kw: B, effects: [{ op: 'claimAround' }], death: [{ op: 'spawnToken' }, { op: 'dmgAdj', n: 1 }] });
   spell('D', 'J', 'Sapper Charge', 'Deal 6 damage to an enemy unit in your reach.', [{ op: 'damage', n: 6, to: 'target' }], { target: 'enemyUnit' });
   spell('D', 'Q', 'Battering Charge', 'Your Siege units may attack again and get +2 attack.', [{ op: 'rearm', to: 'allySuit', suit: 'D' }, { op: 'buff', atk: 2, hp: 0, to: 'allySuit', suit: 'D' }]);
   unit('D', 'K', 'Siege Master', 3, 6, 0, { kw: B, text: 'Play: your Siege units get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'allySuit', suit: 'D' }] });
@@ -116,9 +116,9 @@
   // ♠ Defence — walls (no attack, no counter, take double damage from behind) and defensive boosts
   unit('S', 'A', 'Palisade', 0, 4, 1);
   unit('S', '2', 'Stone Wall', 0, 5, 2);
-  unit('S', '3', 'Bulwark', 0, 6, 2);
-  unit('S', '4', 'Fortress', 0, 6, 3);
-  unit('S', '5', 'Citadel', 0, 6, 4);
+  unit('S', '3', 'Bulwark', 0, 6, 2, { death: [{ op: 'buffAdj', armor: 1 }] });
+  unit('S', '4', 'Fortress', 0, 6, 3, { death: [{ op: 'claimAround' }] });
+  unit('S', '5', 'Citadel', 0, 6, 4, { effects: [{ op: 'healKing', n: 3 }], death: [{ op: 'buffAdj', armor: 1 }] });
   spell('S', '6', 'Field Hospital', 'Your king heals 6.', [{ op: 'healKing', n: 6 }]);
   spell('S', '7', 'Fortify', 'A unit gets +3 health and +1 armour.', [{ op: 'buff', atk: 0, hp: 3, armor: 1, to: 'target' }], { target: 'allyUnit' });
   spell('S', '8', 'Shield Wall', 'All your units get +1 armour.', [{ op: 'buff', atk: 0, hp: 0, armor: 1, to: 'allyUnits' }]);
@@ -126,7 +126,7 @@
   spell('S', '10', 'Royal Guard', 'Your king gets +2 armour.', [{ op: 'kingArmor', n: 2 }]);
   unit('S', 'J', 'Bodyguard', 0, 5, 2, { text: 'Play: your king heals 4.', effects: [{ op: 'healKing', n: 4 }] });
   spell('S', 'Q', 'Engineers', 'Your Defence units get +3 health.', [{ op: 'buff', atk: 0, hp: 3, to: 'allySuit', suit: 'S' }]);
-  unit('S', 'K', 'Warlord', 0, 6, 3, { text: 'Play: your king gets +1 armour.', effects: [{ op: 'kingArmor', n: 1 }] });
+  unit('S', 'K', 'Warlord', 0, 6, 3, { text: 'Play: your king gets +1 armour.', effects: [{ op: 'kingArmor', n: 1 }], death: [{ op: 'claimAround' }] });
 
   // ♣ Offence — boosts for your infantry and commanders
   spell('C', 'A', 'Rally', 'Your infantry get +1 attack.', [{ op: 'buff', atk: 1, hp: 0, to: 'allyInf' }]);
@@ -143,14 +143,14 @@
   spell('C', 'M', 'Land Grab', 'Claim the 3x3 tiles around a tile next to your land (not tiles with enemy units).', [{ op: 'claim' }], { target: 'tile' });
   unit('C', 'J', 'Champion', 5, 4, 0, { kw: ['swift'], text: 'Moving it does not use up one of your moves.' });
   unit('C', 'Q', 'Captain', 3, 4, 0, { text: 'Play: your infantry get +1 attack.', effects: [{ op: 'buff', atk: 1, hp: 0, to: 'allyInf' }] });
-  unit('C', 'K', 'General', 4, 6, 0, { text: 'Play: all your units get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'allyUnits' }] });
+  unit('C', 'K', 'General', 4, 6, 0, { text: 'Play: all your units get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'allyUnits' }], death: [{ op: 'moreMana', n: 1 }] });
 
   // ♥ Long range — archers and crossbows that shoot over the front line, plus tactics
   unit('H', 'A', 'Watchtower', 2, 4, 0);
-  unit('H', '2', 'Longbowmen', 3, 3, 0);
-  unit('H', '3', 'Crossbow Battery', 4, 3, 0);
-  unit('H', '4', 'Heavy Crossbow', 5, 4, 0);
-  unit('H', '5', 'Siege Archers', 6, 4, 0);
+  unit('H', '2', 'Longbowmen', 3, 3, 0, { effects: [{ op: 'reveal' }] });
+  unit('H', '3', 'Crossbow Battery', 4, 3, 0, { effects: [{ op: 'pushAdj' }] });
+  unit('H', '4', 'Heavy Crossbow', 5, 4, 0, { effects: [{ op: 'draw', n: 1 }] });
+  unit('H', '5', 'Siege Archers', 6, 4, 0, { effects: [{ op: 'draw', n: 1 }, { op: 'reveal' }] });
   spell('H', '6', 'Eagle Eye', 'Deal 3 damage to an enemy unit in your reach.', [{ op: 'damage', n: 3, to: 'target' }], { target: 'enemyUnit' });
   spell('H', '7', 'Volley', 'Deal 2 damage to all enemy infantry in your reach.', [{ op: 'damage', n: 2, to: 'enemyInf' }]);
   spell('H', '8', 'Arrow Storm', 'Deal 3 damage to all enemy units in your reach.', [{ op: 'damage', n: 3, to: 'enemyUnits' }]);
@@ -158,7 +158,7 @@
   spell('H', '10', 'Spyglass', 'Draw 2 cards into your hand.', [{ op: 'draw', n: 2 }]);
   unit('H', 'J', 'Marksman', 4, 2, 0, { target: 'enemyInf', text: 'Play: deal 2 damage to an enemy infantry in your reach.', effects: [{ op: 'damage', n: 2, to: 'target' }] });
   spell('H', 'Q', 'Scout Report', 'Draw a card into your hand.', [{ op: 'draw', n: 1 }]);
-  unit('H', 'K', 'Master Archer', 6, 5, 0);
+  unit('H', 'K', 'Master Archer', 6, 5, 0, { effects: [{ op: 'trapAdj', type: 'sticky' }] });
 
   for (const id of Object.keys(CARDS)) {
     const c = CARDS[id];
@@ -166,7 +166,23 @@
     if (c.suit === 'S' && c.kind === 'unit') c.kw = ['wall'].concat(c.kw);
   }
 
-  CARDS.LEGEND = { id: 'LEGEND', kind: 'unit', name: 'Legend', reach: 'melee', atk: 4, hp: 6, armor: 3, kw: ['legend'], text: 'Summoned by your king. Moves up to 3 tiles a turn and claims every tile it lands on.' };
+  // text for arrival effects and death bonuses (built from the effect lists so they never disagree)
+  const PHRASE = {
+    claimAround: () => 'claim the tiles around it', pushAdj: () => 'push adjacent enemies back one tile', reveal: () => 'reveal hidden enemies within 2 tiles',
+    healKing: (e) => `your king heals ${e.n}`, draw: (e) => `draw ${e.n} card${e.n > 1 ? 's' : ''}`, trapAdj: (e) => `lay a ${e.type === 'sticky' ? 'Sticky' : 'Poison'} Trap next to it`,
+    dmgAdj: (e) => `${e.n} damage to adjacent enemies`, poisonAdj: () => 'poison adjacent enemies', trapHere: () => 'leave a Poison Trap on its tile',
+    buffAdj: () => 'adjacent friends get +1 armour', moreMana: (e) => `+${e.n} mana next turn`, spawnToken: () => 'leave a Skeleton (1/0/1) on its tile',
+  };
+  for (const c of Object.values(CARDS)) {
+    if (c.kind !== 'unit' || c.inf) continue;
+    const parts = [];
+    if (c.text) parts.push(c.text);
+    else if (c.effects) parts.push('Arrives: ' + c.effects.map((e) => PHRASE[e.op](e)).join(', ') + '.');
+    if (c.death) parts.push('On fall: ' + c.death.map((e) => PHRASE[e.op](e)).join(', ') + '.');
+    c.text = parts.join(' ');
+  }
+  CARDS.SKEL = { id: 'SKEL', kind: 'unit', name: 'Skeleton', reach: 'melee', atk: 1, hp: 1, armor: 0, kw: [], token: true, text: 'Left behind by a fallen unit.' };
+  CARDS.LEGEND = { id: 'LEGEND', kind: 'unit', name: 'Legend', reach: 'melee', atk: 4, hp: 6, armor: 3, kw: ['legend'], token: true, text: 'Summoned by your king. Moves up to 3 tiles a turn and claims every tile it lands on.' };
   CARDS.KING = { id: 'KING', kind: 'king', name: 'King', reach: 'melee', atk: 0, hp: KING_HP, armor: 0, kw: [], text: 'Lose your king and you lose the game.' };
   // mana costs (infantry are free)
   const COSTS = {
@@ -176,7 +192,7 @@
     HA: 2, H2: 3, H3: 3, H4: 4, H5: 5, H6: 3, H7: 3, H8: 5, H9: 2, H10: 2, HJ: 4, HQ: 1, HK: 6,
   };
   for (const id of Object.keys(CARDS)) CARDS[id].cost = CARDS[id].inf ? 0 : (COSTS[id] || 0);
-  const DECK = Object.keys(CARDS).filter((id) => !CARDS[id].inf && id !== 'KING' && id !== 'LEGEND');
+  const DECK = Object.keys(CARDS).filter((id) => !CARDS[id].inf && id !== 'KING' && !CARDS[id].token);
 
   // ---------------------------------------------------------------- helpers
   function rand(state) { // mulberry32
@@ -399,7 +415,7 @@
     for (const t of [first, second]) { state.outposts.push({ r: t.r, c: t.c, kind: null }); state.outposts.push({ r: ROWS - 1 - t.r, c: COLS - 1 - t.c, kind: null }); }
     for (let p = 0; p < 2; p++) {
       state.board[backRow(p)][KING_C] = { uid: ++state.uid, id: 'KING', p, atk: 0, hp: KING_HP, maxHp: KING_HP, armor: 0, attacked: true, moved: true, fresh: false, trapped: true, maxArmor: 0, stealth: false, ammo: 0, garrison: null, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false, since: 0 };
-      state.players.push({ mana: 0, maxMana: 0, turns: 0, moves: 0, swaps: 0, infHand: [], deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [], infDiscard: [], squadDiscard: [], legendCd: 0, legendLevel: 0 });
+      state.players.push({ mana: 0, maxMana: 0, turns: 0, moves: 0, swaps: 0, infHand: [], deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [], infDiscard: [], squadDiscard: [], legendCd: 0, legendLevel: 0, nextMana: 0 });
     }
     for (let p = 0; p < 2; p++) for (let i = 0; i < START_HAND; i++) drawToHand(state, p);
     startTurn(state);
@@ -434,7 +450,8 @@
   function startTurn(state) {
     const p = state.active, pl = state.players[p];
     pl.turns++;
-    pl.maxMana = Math.min(MAX_MANA, pl.turns) + heldOutposts(state, p, 'mine').length;
+    pl.maxMana = Math.min(MAX_MANA, pl.turns) + heldOutposts(state, p, 'mine').length + pl.nextMana;
+    pl.nextMana = 0;
     pl.mana = pl.maxMana;
     if (pl.legendCd > 0) pl.legendCd--;
     pl.moves = MOVES;
@@ -470,15 +487,22 @@
     startTurn(state);
   }
 
+  const NEIGH = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
   function cleanup(state) {
-    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
-      const u = state.board[r][c];
-      if (u && u.hp <= 0 && !isKing(u)) {
-        log(state, `${CARDS[u.id].name} is destroyed.`);
-        if (u.legend) { state.players[u.p].legendCd = LEGEND_LEVELS[u.level].cost; log(state, `Player ${u.p + 1}'s Legend has fallen; it can be summoned again in ${state.players[u.p].legendCd} turn(s).`); }
-        if (u.garrison) { state.board[r][c] = u.garrison; log(state, `${CARDS[u.garrison.id].name} drops out of the wreckage.`); }
-        else state.board[r][c] = null;
+    for (let pass = 0; pass < 8; pass++) {              // death bonuses can kill other units, so repeat until nothing more falls
+      const fallen = [];
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const u = state.board[r][c];
+        if (u && u.hp <= 0 && !isKing(u)) {
+          log(state, `${CARDS[u.id].name} is destroyed.`);
+          if (u.legend) { state.players[u.p].legendCd = LEGEND_LEVELS[u.level].cost; log(state, `Player ${u.p + 1}'s Legend has fallen; it can be summoned again in ${state.players[u.p].legendCd} turn(s).`); }
+          if (u.garrison) { state.board[r][c] = u.garrison; log(state, `${CARDS[u.garrison.id].name} drops out of the wreckage.`); }
+          else state.board[r][c] = null;
+          fallen.push({ u, r, c });
+        }
       }
+      for (const f of fallen) if (CARDS[f.u.id].death) runEffects(state, CARDS[f.u.id].death, { p: f.u.p, cell: { r: f.r, c: f.c }, dead: true });
+      if (!fallen.length) break;
     }
     if (state.winner == null) {
       const k0 = kingOf(state, 0).hp <= 0, k1 = kingOf(state, 1).hp <= 0;
@@ -572,6 +596,36 @@
           break;
         }
         case 'claim': { const got = grabTiles(state, ctx.p, ctx.target); for (const t of got) state.owner[t.r][t.c] = ctx.p; log(state, `Player ${ctx.p + 1} claims ${got.length} tiles.`); break; }
+        case 'claimAround': { const got = grabTiles(state, ctx.p, ctx.cell); for (const t of got) state.owner[t.r][t.c] = ctx.p; state.owner[ctx.cell.r][ctx.cell.c] = ctx.p; if (got.length) log(state, `${got.length} tiles are claimed.`); break; }
+        case 'buffAdj': for (const [dr, dc] of NEIGH) { const u = unitAt(state, ctx.cell.r + dr, ctx.cell.c + dc); if (u && u.p === ctx.p && !isKing(u)) { u.armor += e.armor || 0; u.maxArmor += e.armor || 0; u.atk += e.atk || 0; } } break;
+        case 'dmgAdj': for (const [dr, dc] of NEIGH) { const u = unitAt(state, ctx.cell.r + dr, ctx.cell.c + dc); if (u && u.p !== ctx.p && !u.stealth) u.hp -= e.n; } break;
+        case 'poisonAdj': for (const [dr, dc] of NEIGH) { const u = unitAt(state, ctx.cell.r + dr, ctx.cell.c + dc); if (u && u.p !== ctx.p && !u.stealth && !isKing(u)) u.poison = Math.max(u.poison, 2); } break;
+        case 'pushAdj':
+          for (const [dr, dc] of NEIGH) {
+            const r = ctx.cell.r + dr, c = ctx.cell.c + dc, u = unitAt(state, r, c), nr = r + dr, nc = c + dc;
+            if (!u || u.p === ctx.p || isKing(u) || u.stealth || !inBounds(nr, nc) || state.board[nr][nc]) continue;
+            state.board[r][c] = null; state.board[nr][nc] = u;
+            log(state, `${CARDS[u.id].name} is shoved back.`);
+            enterTile(state, u, nr, nc);
+          }
+          break;
+        case 'reveal':
+          for (let r = ctx.cell.r - 2; r <= ctx.cell.r + 2; r++) for (let c = ctx.cell.c - 2; c <= ctx.cell.c + 2; c++) {
+            const u = unitAt(state, r, c);
+            if (u && u.p !== ctx.p && u.stealth) { u.stealth = false; log(state, `${CARDS[u.id].name} is spotted!`); }
+          }
+          break;
+        case 'trapAdj': {
+          const fwd = dirOf(ctx.p), order = NEIGH.slice().sort((a, b) => b[0] * fwd - a[0] * fwd);
+          for (const [dr, dc] of order) {
+            const r = ctx.cell.r + dr, c = ctx.cell.c + dc;
+            if (inBounds(r, c) && !state.board[r][c] && !trapAt(state, r, c)) { layTrap(state, ctx.p, { r, c }, e.type); break; }
+          }
+          break;
+        }
+        case 'trapHere': if (!trapAt(state, ctx.cell.r, ctx.cell.c) && !state.board[ctx.cell.r][ctx.cell.c]) layTrap(state, ctx.p, ctx.cell, e.type); break;
+        case 'spawnToken': if (!state.board[ctx.cell.r][ctx.cell.c]) { const u = makeUnit(state, ctx.p, 'SKEL'); u.fresh = false; state.board[ctx.cell.r][ctx.cell.c] = u; log(state, 'A Skeleton rises.'); } break;
+        case 'moreMana': pl.nextMana += e.n; break;
         case 'damage': for (const x of resolveTargets(state, e, ctx)) at(x).hp -= e.n; break;
         case 'rearm': for (const x of resolveTargets(state, e, ctx)) { at(x).attacked = false; if (at(x).garrison) at(x).garrison.attacked = false; } break;
         case 'buff':
@@ -680,7 +734,7 @@
         pl.squadDiscard.push(id);
         log(state, `Player ${p + 1} plays ${cardLabel(c)} (${c.cost} mana).`);
       }
-      if (c.effects) runEffects(state, c.effects, { p, target: a.target });
+      if (c.effects) runEffects(state, c.effects, { p, target: a.target, cell: a.cell });
     } else if (a.t === 'move') {
       const u = state.board[a.from.r][a.from.c], dest = state.board[a.cell.r][a.cell.c];
       state.board[a.from.r][a.from.c] = null;
@@ -743,7 +797,7 @@
     return state;
   }
 
-  const VERSION = 'r14'; // bump whenever a rule or card changes: recorded games replay only on the version that recorded them
+  const VERSION = 'r15'; // bump whenever a rule or card changes: recorded games replay only on the version that recorded them
   const api = { VERSION, ROWS, COLS, KING_C, KING_HP, HAND_MAX, START_HAND, MAX_MANA, MOVES, MAX_TURNS, HOME_ROWS, DEFENCE_ZONE, OUTPOSTS, LEGEND_LEVELS, LEGEND_STEPS, levelFor, legendLevel, legendOf, summonTiles, tileCount, grabTiles, grabCentres, outpostAt, heldOutposts, ownerAt, SYM, SUIT_ROLE, CLS_SYM, TRAPS, CARDS, DECK, INF_DECK, newGame, legalActions, applyAction, clone, hasKw, suitOf, isKing, isInf, sameRef, locEq, backRow, dirOf, kingOf, inRange, reachTiles, attackTargets, spawnTiles, spawnTilesFor, moveDests, trapAt, unitAt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TBC = api;
