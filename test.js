@@ -41,11 +41,11 @@ assert.strictEqual(E.INF_DECK.length, 36);
 // --- rule spot checks
 function fresh() {
   const s = E.newGame(1);
-  for (const pl of s.players) { pl.hand = []; pl.revealed = null; pl.deploys = 1; pl.moves = 1; pl.squadLeft = 1; }
+  for (const pl of s.players) { pl.hand = []; pl.revealed = null; pl.deploys = 1; pl.moves = 3; pl.squadLeft = 1; }
   s.log = [];
   return s;
 }
-const put = (s, p, r, c, id) => { const k = E.CARDS[id]; return (s.board[r][c] = { uid: ++s.uid, id, p, atk: k.atk, hp: k.hp, maxHp: k.hp, armor: k.armor, attacked: false, moved: false }); };
+const put = (s, p, r, c, id) => { const k = E.CARDS[id]; return (s.board[r][c] = { uid: ++s.uid, id, p, atk: k.atk, hp: k.hp, maxHp: k.hp, armor: k.armor, attacked: false, moved: false, fresh: false }); };
 const acts = (s, t) => E.legalActions(s).filter((a) => a.t === t);
 const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target });
 
@@ -56,16 +56,31 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
   E.applyAction(s, { t: 'end' });
   assert(acts(s, 'deploy').every((a) => a.cell.r === 8), 'p1 spawns on row 8');
 }
-{ // one deploy, one move per turn
+{ // one deploy per turn; up to 3 moves, one step per unit, never backward
   const s = fresh();
-  const dep = acts(s, 'deploy')[0];
-  E.applyAction(s, dep);
+  E.applyAction(s, acts(s, 'deploy')[0]);
   assert.strictEqual(acts(s, 'deploy').length, 0, 'one infantry per turn');
-  put(s, 0, 2, 1, 'iSword'); put(s, 0, 2, 5, 'iSword');
+  for (let c = 0; c < 4; c++) s.board[2][c] = Object.assign({}, put(s, 0, 2, c, 'iSword'), { fresh: false });
   const mv = acts(s, 'move');
   assert(mv.length > 0 && mv.every((m) => m.cell.r >= m.from.r), 'no backward moves');
-  E.applyAction(s, mv[0]);
-  assert.strictEqual(acts(s, 'move').length, 0, 'only one unit may move per turn');
+  E.applyAction(s, mv.find((m) => m.from.c === 0));
+  assert(!acts(s, 'move').some((m) => m.from.c === 0), 'a unit moves at most once per turn');
+  E.applyAction(s, acts(s, 'move').find((m) => m.from.c === 1));
+  E.applyAction(s, acts(s, 'move').find((m) => m.from.c === 2));
+  assert.strictEqual(acts(s, 'move').length, 0, 'three moves used up');
+}
+{ // units placed this turn cannot move; they can next turn
+  const s = fresh();
+  E.applyAction(s, acts(s, 'deploy')[0]);
+  assert.strictEqual(acts(s, 'move').length, 0, 'freshly deployed infantry cannot move');
+  s.players[0].hand = ['C8']; s.players[0].squadLeft = 1;
+  E.applyAction(s, { t: 'play', hand: 0 });                  // conscription: 3 more fresh units
+  assert.strictEqual(acts(s, 'move').length, 0, 'conscripted units cannot move either');
+  E.applyAction(s, { t: 'end' }); E.applyAction(s, { t: 'end' });
+  assert(acts(s, 'move').length > 0, 'they can move on your next turn');
+  const swiftTest = fresh();
+  put(swiftTest, 0, 0, 1, 'CJ').fresh = true;                // swift Champion, just placed
+  assert.strictEqual(acts(swiftTest, 'move').length, 0, 'even swift units wait a turn');
 }
 { // squad: revealed card must be played or held; hand max 3; one play per turn
   const s = fresh();

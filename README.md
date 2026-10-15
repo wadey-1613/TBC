@@ -6,7 +6,7 @@ Open `index.html` to play against the AI. `node test.js` runs rules tests and pl
 ## Per turn
 1. **Deploy 1 infantry** (free, top of your infantry deck). It appears on your back row.
 2. **Reveal a squad card** (top of your 52-card deck). Play it (units appear on your back row, boosts take effect) or **hold** it in your hand (max 3). You may play **one** squad card per turn, the revealed one or one from hand. An unused revealed card is discarded.
-3. **Move 1 unit** one tile, forward or sideways. (*Swift* units, like the Champion, move without using your move.)
+3. **Move up to 3 units**, one tile each, forward or sideways. Only units that were already on the board when your turn began can move; anything you place this turn is *new* and has to wait. (*Swift* units, like the Champion, don't use up one of the 3 moves.)
 4. **Attack:** every unit may attack once per turn, for free.
 
 ## Reach (three shapes, from the design sketch)

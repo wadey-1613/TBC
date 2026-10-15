@@ -105,7 +105,7 @@
 
   function barHtml(p) {
     const pl = state.players[p], k = E.kingOf(state, p);
-    return `<b>${p === ME ? 'You' : 'Opponent'}</b><span>Castle <b>♥${k.hp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span>Squad deck <b>${pl.deck.length}</b></span><span>Infantry <b>${pl.infDeck.length}</b></span><span class="grow"></span>${state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
+    return `<b>${p === ME ? 'You' : 'Opponent'}</b><span>Castle <b>♥${k.hp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span>Moves <b>${pl.moves}</b></span><span>Squad deck <b>${pl.deck.length}</b></span><span>Infantry <b>${pl.infDeck.length}</b></span><span class="grow"></span>${state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
   }
 
   let reachSet = new Set();
@@ -119,13 +119,13 @@
     const isTarget = pending !== null && pending.target === undefined && rem.some((a) => a.target && sameRef(a.target, ref));
     const ready = u.p === ME && !pending && myTurn() && legal.some((a) => a.from && locEq(a.from, ref));
     const sel = pending && pending.from && locEq(pending.from, ref);
-    const cls = ['unit', 'p' + u.p, k.inf ? 'I' : (k.suit || ''), isKing(u) ? 'king' : '', ready ? 'ready' : '', isTarget ? 'target' : '', sel ? 'selected' : '', u.attacked && !isKing(u) ? 'spent' : ''].join(' ');
+    const cls = ['unit', 'p' + u.p, k.inf ? 'I' : (k.suit || ''), isKing(u) ? 'king' : '', ready ? 'ready' : '', isTarget ? 'target' : '', sel ? 'selected' : '', u.attacked && !isKing(u) ? 'spent' : '', u.fresh ? 'fresh' : ''].join(' ');
     const rk = isKing(u) ? '♔' : k.inf ? CLS_SYM[k.cls] : `${k.rank}${SYM[k.suit]}`;
     const title = `${k.name}${k.inf ? ' — ' + k.cls + ' infantry' : k.suit ? ' — ' + SUIT_ROLE[k.suit] : ''} [${isKing(u) ? 'castle' : REACH[k.reach]}${k.kw.length ? ', ' + k.kw.join(', ') : ''}]${k.text ? ': ' + k.text : ''}`;
     const stats = isKing(u)
       ? `<span class="h ${u.hp < u.maxHp ? 'hurt' : ''}">♥${u.hp}</span>${u.armor ? `<span class="ar">🛡${u.armor}</span>` : ''}`
       : `<span class="a">⚔${u.atk}</span>${u.armor ? `<span class="ar">🛡${u.armor}</span>` : ''}<span class="h ${u.hp < u.maxHp ? 'hurt' : ''}">♥${u.hp}</span>`;
-    return `<div ${attrs}><div class="${cls}" title="${title}"><span class="rk">${rk}</span><div class="nm">${k.name}</div><div class="st">${stats}</div></div></div>`;
+    return `<div ${attrs}><div class="${cls}" title="${title}"><span class="rk">${rk}</span>${u.fresh ? '<span class="new">new</span>' : ''}<div class="nm">${k.name}</div><div class="st">${stats}</div></div></div>`;
   }
 
   function boardHtml() {
@@ -176,7 +176,8 @@
       const bits = [];
       if (pl.deploys > 0 && pl.infDeck.length) bits.push('deploy infantry');
       if (pl.revealed) bits.push('play or hold the squad card');
-      return 'Your turn: ' + (bits.length ? bits.join(', ') + ', ' : '') + 'select a green unit to move or attack.' + (pl.revealed ? ' An unused squad card is discarded when you end the turn.' : '');
+      if (pl.moves > 0) bits.push(pl.moves + ' move' + (pl.moves > 1 ? 's' : '') + ' left');
+      return 'Your turn: ' + (bits.length ? bits.join(', ') + '. ' : '') + 'Select a green unit to move or attack.' + (pl.revealed ? ' An unused squad card is discarded when you end the turn.' : '');
     }
     if (pending.deploy) return 'Choose a tile on your back row.';
     if (pending.hand !== undefined) {

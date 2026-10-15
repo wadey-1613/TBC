@@ -6,13 +6,14 @@
  * Per turn:  deploy 1 infantry (free, top of the infantry deck, appears on your back row)
  *            reveal 1 squad card, then either play it (units appear on your back row) or hold it (hand max 3)
  *            play at most 1 squad card (revealed or from hand)
- *            move 1 unit one step (forward or sideways)
+ *            move up to 3 different units one step each (forward or sideways), but only units that were
+ *            already on the board when your turn began; anything placed this turn is 'fresh' and can't move
  *            every unit may attack once per turn (free)
  */
 (function (root) {
   'use strict';
 
-  const ROWS = 9, COLS = 7, KING_C = 3, KING_HP = 30, HAND_MAX = 3;
+  const ROWS = 9, COLS = 7, KING_C = 3, KING_HP = 30, HAND_MAX = 3, MOVES = 3;
   const SYM = { S: '♠', C: '♣', D: '♦', H: '♥' };
   const SUIT_ROLE = { S: 'Defence', C: 'Offence', D: 'Siege', H: 'Long range' };
   const CLS_SYM = { melee: '⚔', ranged: '➶', defence: '▣' };
@@ -80,7 +81,7 @@
   // ♣ Offence — boosts for your infantry and commanders
   spell('C', 'A', 'Rally', 'Your infantry get +1 attack.', [{ op: 'buff', atk: 1, hp: 0, to: 'allyInf' }]);
   spell('C', '2', 'Sharpen Blades', 'A unit gets +2 attack.', [{ op: 'buff', atk: 2, hp: 0, to: 'target' }], { target: 'allyUnit' });
-  spell('C', '3', 'Forced March', 'You may move 1 extra unit this turn.', [{ op: 'moves', n: 1 }]);
+  spell('C', '3', 'Forced March', 'You may make 1 extra move this turn.', [{ op: 'moves', n: 1 }]);
   spell('C', '4', 'Charge', 'A unit may attack again and gets +1 attack.', [{ op: 'rearm', to: 'target' }, { op: 'buff', atk: 1, hp: 0, to: 'target' }], { target: 'allyUnit' });
   spell('C', '5', 'Warhorn', 'All your units get +1/+1.', [{ op: 'buff', atk: 1, hp: 1, to: 'allyUnits' }]);
   spell('C', '6', 'Berserk', 'An infantry gets +3 attack.', [{ op: 'buff', atk: 3, hp: 0, to: 'target' }], { target: 'allyInf' });
@@ -88,7 +89,7 @@
   spell('C', '8', 'Conscription', 'Immediately deploy 3 infantry.', [{ op: 'summonInf', n: 3 }]);
   spell('C', '9', 'Battle Cry', 'All your units may attack again.', [{ op: 'rearm', to: 'allyUnits' }]);
   spell('C', '10', 'Drums of War', 'Your infantry get +2 attack.', [{ op: 'buff', atk: 2, hp: 0, to: 'allyInf' }]);
-  unit('C', 'J', 'Champion', 5, 4, 0, { kw: ['swift'], text: 'Moving it does not use your move.' });
+  unit('C', 'J', 'Champion', 5, 4, 0, { kw: ['swift'], text: 'Moving it does not use up one of your moves.' });
   unit('C', 'Q', 'Captain', 3, 4, 0, { text: 'Play: your infantry get +1 attack.', effects: [{ op: 'buff', atk: 1, hp: 0, to: 'allyInf' }] });
   unit('C', 'K', 'General', 4, 6, 0, { text: 'Play: all your units get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'allyUnits' }] });
 
@@ -177,7 +178,7 @@
     if (hasKw(att, 'breach')) return suitOf(def) === 'S' ? att.atk * 2 : att.atk;
     return Math.max(0, att.atk - def.armor);
   }
-  const makeUnit = (state, p, id) => { const c = CARDS[id]; return { uid: ++state.uid, id, p, atk: c.atk, hp: c.hp, maxHp: c.hp, armor: c.armor, attacked: false, moved: false }; };
+  const makeUnit = (state, p, id) => { const c = CARDS[id]; return { uid: ++state.uid, id, p, atk: c.atk, hp: c.hp, maxHp: c.hp, armor: c.armor, attacked: false, moved: false, fresh: true }; };
 
   function attackTargets(state, r, c) {
     const u = state.board[r][c], out = [];
@@ -195,7 +196,7 @@
     const state = { rng: seed | 0, turn: 1, active: 0, winner: null, reason: '', uid: 0, log: [], board: [], players: [] };
     for (let r = 0; r < ROWS; r++) state.board.push(new Array(COLS).fill(null));
     for (let p = 0; p < 2; p++) {
-      state.board[backRow(p)][KING_C] = { uid: ++state.uid, id: 'KING', p, atk: 0, hp: KING_HP, maxHp: KING_HP, armor: 0, attacked: true, moved: true };
+      state.board[backRow(p)][KING_C] = { uid: ++state.uid, id: 'KING', p, atk: 0, hp: KING_HP, maxHp: KING_HP, armor: 0, attacked: true, moved: true, fresh: false };
       state.players.push({ deploys: 0, moves: 0, squadLeft: 0, revealed: null, deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [] });
     }
     startTurn(state);
@@ -220,9 +221,9 @@
   function startTurn(state) {
     const p = state.active, pl = state.players[p];
     pl.deploys = 1; // the second player's first turn gets a bonus deploy
-    pl.moves = 1;
+    pl.moves = MOVES;
     pl.squadLeft = 1;
-    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const u = state.board[r][c]; if (u && u.p === p) { u.attacked = false; u.moved = false; } }
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const u = state.board[r][c]; if (u && u.p === p) { u.attacked = false; u.moved = false; u.fresh = false; } }
     log(state, `— Turn ${state.turn}: Player ${p + 1} —`);
     if (!pl.deck.length) loseBy(state, p, `Player ${p + 1} ran out of squad cards.`);
     else { pl.revealed = pl.deck.pop(); log(state, `Player ${p + 1} reveals ${cardLabel(CARDS[pl.revealed])}.`); }
@@ -352,7 +353,7 @@
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       const u = state.board[r][c];
       if (!u || u.p !== p || isKing(u)) continue;
-      if (!u.moved && (pl.moves > 0 || hasKw(u, 'swift'))) {
+      if (!u.moved && !u.fresh && (pl.moves > 0 || hasKw(u, 'swift'))) {
         for (const [dr, dc] of [[dir, 0], [0, -1], [0, 1]]) {
           const nr = r + dr, nc = c + dc;
           if (inBounds(nr, nc) && !state.board[nr][nc]) acts.push({ t: 'move', from: { r, c }, cell: { r: nr, c: nc } });

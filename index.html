@@ -26,6 +26,8 @@
   .unit.spent { opacity:.78; }
   .unit .nm { font-weight:700; font-size:11px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .unit .st { display:flex; justify-content:space-between; font-size:13px; font-weight:800; }
+  .unit .new { position:absolute; top:0; left:4px; font-size:9px; font-weight:800; color:var(--gold); text-transform:uppercase; }
+  .unit.fresh { border-style:dashed; }
   .unit .rk { font-size:10px; font-weight:800; position:absolute; top:-1px; right:4px; color:var(--dim); }
   .a { color:#ffb454; } .h { color:var(--ok); } .h.hurt { color:var(--foe); } .ar { color:#9fd4ff; }
   #side { display:flex; flex-direction:column; gap:8px; min-width:0; }
@@ -80,7 +82,7 @@
     <div id="log"></div>
     <div id="help">
       <b>Goal:</b> march up the table and destroy the enemy castle (king). Your castle is at the bottom.<br>
-      <b>Each turn:</b> deploy 1 infantry (free) · reveal a squad card and play it or hold it · play 1 squad card · move 1 unit a step (forward or sideways) · every unit may attack once.
+      <b>Each turn:</b> deploy 1 infantry (free) · reveal a squad card and play it or hold it · play 1 squad card · move up to 3 units a step each (forward or sideways), but only units that were on the board when your turn began (new ones can't move) · every unit may attack once.
       New cards appear on your back row (blue).<br>
       <b>Reach shapes</b> (up is toward the enemy castle):
       <pre>MELEE      RANGE       DEFENCE
