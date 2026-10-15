@@ -3,25 +3,25 @@
 War-sim card game on a shared 7x9 grid: march up the table and destroy the enemy castle (king), or own more land when the rounds run out.
 Open `index.html` to play against the AI. `node test.js` runs rules tests and playouts.
 
-## Board and land
-7 wide x 9 deep. Your castle (king) is at the bottom, theirs at the top. New cards appear on your back row.
-**Defence** units (▣ infantry and ♠ cards) can also be placed anywhere within 2 tiles of your king.
-- **Land:** rows 1-4 start as yours, rows 6-9 as theirs, row 5 is neutral. **Landing on a tile claims it** (placing, moving, a Legend's steps). It stays yours until an enemy lands on it. Hidden rogues claim nothing.
-- **♣ Land Grab** (2 in the squad deck, 3 mana): claim the 3x3 around a tile that touches your land. Tiles holding enemy units are not taken.
-- **Outposts ⚑:** 4 marked tiles in two mirrored pairs. A unit that has stood on one since your previous turn lets you build there (free, once per tile): **🏹 Lookout** (a ranged unit on it shoots one tile further), **⛺ Bunker** (+1 free infantry each turn, and your infantry may be placed around it), **⛏ Gold Mine** (+1 mana each turn). They work for whoever is standing on them.
-- **King's Legend ★:** summon it next to your king (button). Level 1/2/3 by tiles owned (under 31 / 31-37 / 38+) sets its stats and its cost in mana (1/2/3). Stats are roughly twice a normal unit (level 1: 4 attack, 3 armour, 6 health). It takes 3 steps a turn (separate from your 3 moves), claiming each tile it lands on. One at a time; after it falls you wait as many turns as it cost.
-- **Time limit:** 40 rounds each. If nobody has taken a castle, whoever owns more tiles wins (a tie goes to the healthier castle).
+## Board and land (compact rules, r16)
+5 wide x 7 deep. Each **king sits off the grid, one row behind your back row** (rows 0 and 8 hold only the kings). New cards appear on your back row (the first row of play).
+**Defence** units (▣ infantry and ♠ cards) can also go in your first two rows. You hit a king with melee from the enemy's back row (any of the 3 tiles in front of it) or with range from 2-3 rows out.
+- **Land:** your 3 back rows start as yours, the enemy's 3 as theirs, the middle row is neutral (16 tiles each incl. the king's, 5 neutral). **Landing on a tile claims it** and it stays yours until an enemy lands on it. Hidden rogues claim nothing.
+- **♣ Land Grab** (3 mana): claim the 3x3 around a tile that touches your land. Tiles holding enemy units are not taken.
+- **Outposts ⚑:** 2 marked tiles, a mirrored pair near the middle. A unit that has stood on one since your previous turn lets you build there (free): **🏹 Lookout** (a ranged unit on it shoots one tile further), **⛺ Bunker** (+1 free infantry each turn, placeable around it), **⛏ Gold Mine** (+1 mana each turn). They work for whoever stands on them.
+- **King's Legend ★:** summon it next to your king. Level 1/2/3 by tiles owned (under 19 / 19-22 / 23+) sets its stats and cost (1/2/3 mana). Roughly twice a normal unit (level 1: 4 attack, 3 armour, 6 health). Its move of up to 3 tiles costs **one action** and claims every tile it lands on. One at a time; after it falls you wait as many turns as it cost.
+- **Time limit:** 15 rounds each. If nobody has taken a castle, whoever owns more tiles wins (a tie goes to the healthier castle).
+- Future idea: bigger boards for a longer tactical mode (the size lives in a few constants in `engine.js`).
 
 ## Per turn
-1. **Draw** 1 squad card. You start with 5 cards and hold up to 8 (a card drawn into a full hand goes to the bottom of the deck, so nothing is lost). The first player skips the draw on turn 1.
+1. **Draw** 1 squad card. You start with 4 cards and hold up to 6 (a card drawn into a full hand goes to the bottom of the deck, so nothing is lost). The first player skips the draw on turn 1.
 2. **Mana** is 1 on your first turn, 2 on your second, and so on up to 10. Unspent mana doesn't carry over.
 3. **Play cards** from your hand: as many as your mana pays for (the number in the card's corner is its cost). Units go on the board, boosts take effect and go to the discard pile.
-4. **Free infantry:** one infantry card is dealt to you each turn. Place it straight away for free, or pay **1 mana once a turn to swap** it for the next one. An unplaced infantry goes to the bottom of its deck.
-5. **Move up to 3 units**, one tile each (forward or sideways). Only units that were already on the board when your turn began can move; anything you place this turn is *new*. Hidden rogues move 2 tiles in any direction. *Swift* units (Champion) don't use up one of the 3 moves.
-6. **Attack:** every unit may attack once per turn, for free.
+4. **Free infantry:** one infantry card is dealt to you each turn. Place it straight away for free; an unplaced infantry goes to the bottom of its deck.
+5. **3 actions:** every move (one step forward or sideways; hidden rogues two, any direction; only units that were on the board when your turn began) and every attack (once per unit) uses one action. Rogue traps and bombs use one too. *Swift* units (Champion) move for free. Playing cards uses mana, not actions.
 
-**Where cards go:** new units appear on your back row. Defence units (▣ and ♠ cards) may also go anywhere within 2 tiles of your king, and archers may go into a friendly Siege Tower. If every usual tile for a card is full, it may use any empty tile on your first two rows.
-When a deck runs out, its own discard pile is shuffled into a new deck. Running out is never a loss; the only win is destroying the enemy castle.
+**Where cards go:** new units appear on your back row. Defence units (▣ and ♠ cards) may also go in your first two rows, and archers may go into a friendly Siege Tower. If every usual tile for a card is full, it may use any empty tile on your first two rows.
+When a deck runs out, its own discard pile is shuffled into a new deck. Running out is never a loss; a game is won by destroying the enemy castle or by owning more land when time runs out.
 
 ## Armour, walls and counters
 - **Armour is a pool of plates.** A normal hit removes `ceil(attack / 2)` plates and leaves health alone. Once the plates are gone, hits go to health at full strength (no spill-over). **Breach** (♦ siege), poison and bombs ignore armour; boosts that deal damage do too.
@@ -66,7 +66,7 @@ Destroy the enemy king (30 HP) on their back row, or own more tiles when the 40 
   - ➶ Ranged ×10 (Archer, Slinger): 1 / 1 / 2
   - ▣ Defence ×10 (Shieldman, Guard, Pikeman): 0 / 3 / 3, counters
   - 🗡 Rogues ×8 (Poisoner, Trapper, Saboteur, Bomber ×2 each): 1 / 2 / 2, hidden
-- **Squad deck (55):** ♦ Siege (+ Siege Tower) · ♠ Defence walls (4 to 6 health, armour 1 to 4, no attack) · ♣ Offence · ♥ Long range. Units and boosts mixed, plus 2 Land Grabs.
+- **Squad deck (40):** ♦ Siege (+ Siege Tower) · ♠ Defence walls (4 to 6 health, armour 1 to 4, no attack) · ♣ Offence · ♥ Long range. Units and boosts mixed, plus a Land Grab.
 
 ## Arrives and On fall
 Squad units can carry an **Arrives** effect (when played) and an **On fall** bonus (when they die, including from poison or bombs; bonuses can chain).

@@ -7,7 +7,7 @@
   function sideScore(s, p) {
     const pl = s.players[p], king = E.kingOf(s, p), foeKing = E.kingOf(s, 1 - p);
     let v = king.hp * 3 + king.armor * 4 + pl.hand.length * 2 - pl.mana * 0.6;     // unspent mana is wasted, so spend it
-    const home = E.backRow(p), foeRow = E.backRow(1 - p);
+    const home = E.kingRow(p), foeRow = E.kingRow(1 - p);
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const u = s.board[r][c];

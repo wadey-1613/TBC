@@ -11,8 +11,10 @@
   body { margin:0; background:var(--bg); color:var(--text); font:13px/1.25 system-ui,sans-serif; user-select:none; }
   #app { display:grid; grid-template-columns: minmax(0,1fr) 320px; gap:12px; max-width:1220px; margin:0 auto; padding:10px; align-items:start; }
   #main { display:flex; flex-direction:column; gap:6px; min-width:0; max-width:800px; width:100%; margin:0 auto; }
-  #board { max-width:640px; width:100%; margin:0 auto; display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
-  .cell { aspect-ratio:3/4; border:1px solid #2a3144; border-radius:6px; position:relative; background:#181c26; }
+  #board { max-width:470px; width:100%; margin:0 auto; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; }
+  .cell.void { visibility:hidden; border:0; background:none; }
+  .cell.kingrow { aspect-ratio:auto; height:76px; } .cell.kingrow .uart { display:none; } .cell.kingrow .unit { justify-content:center; gap:4px; }
+  .cell { aspect-ratio:4/5; border:1px solid #2a3144; border-radius:6px; position:relative; background:#181c26; }
   .cell.own0 { background:#16253a; border-color:#27456b; } .cell.own1 { background:#3a1b22; border-color:#6b2f39; }
   .cell.outpost { box-shadow: inset 0 0 0 2px rgba(242,193,78,.55); }
   .cell .op { position:absolute; top:-7px; left:50%; transform:translateX(-50%); font-size:12px; line-height:1; background:rgba(10,12,18,.8); border:1px solid var(--gold); border-radius:6px; padding:0 4px; z-index:4; color:var(--gold); }
@@ -76,7 +78,7 @@
   #infslot { width:112px; flex:none; display:flex; flex-direction:column; gap:4px; }
   #infslot .card { width:100%; height:196px; } .card.inf .ty { display:none; } .card.inf .art { min-height:90px; }
   #handwrap { flex:1; min-width:0; }
-  #hand { display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); gap:5px; }
+  #hand { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:5px; }
   #hand .card { padding:4px 3px; } #hand .card .pill { font-size:11px; gap:1px; padding:1px 0; } #hand .card .nm { font-size:11px; } #hand .card .tx { font-size:9px; } #hand .card .tags { font-size:8px; } #hand .card .ty { font-size:8px; }
   .mana { letter-spacing:1px; color:#5aa2ff; } .mana .off { color:#34405a; }
   .card .cost { position:absolute; top:-8px; left:-8px; width:24px; height:24px; border-radius:50%; background:#3d6dff; border:2px solid #fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:13px; z-index:3; }
@@ -142,7 +144,7 @@
     <div id="board"></div>
     <div id="myBar" class="bar"></div>
     <div id="actrow"><span id="hint"></span><span id="buildRow"></span><button id="summonBtn" class="alt small" hidden>Summon Legend</button><button id="trapBtn" class="alt small" hidden>Lay trap</button><button id="bombBtn" class="alt small" hidden>Throw bomb</button><button id="endBtn">End turn</button></div>
-    <div id="handrow"><div id="infslot"><h4>Free infantry</h4><div id="infantry"></div><button id="swapBtn" class="alt small">Swap (1 mana)</button></div><div id="handwrap"><h4>Your hand <span id="handInfo"></span></h4><div id="hand"></div></div></div>
+    <div id="handrow"><div id="infslot"><h4>Free infantry</h4><div id="infantry"></div></div><div id="handwrap"><h4>Your hand <span id="handInfo"></span></h4><div id="hand"></div></div></div>
   </div>
   <div id="side">
     <div id="oppCtl"><b>Opponent</b><label>speed <select id="aiSpeed"><option value="normal">Normal</option><option value="fast">Fast</option><option value="instant">Instant</option></select></label><label>thinking <select id="aiThink"><option value="turn">1–10 s each turn</option><option value="action">1–10 s before every action</option><option value="off">Off</option></select></label><button id="skipBtn" class="alt small" hidden>Skip opponent</button></div>
@@ -150,12 +152,12 @@
     <div id="rec"><textarea id="noteBox" rows="2" placeholder="Anything odd, unfair or boring? Note it here and press Save note. It is stored with this game."></textarea><div id="recRow"><button id="noteBtn" class="alt small">Save note</button><span id="recStatus"></span></div></div>
     <div id="help">
       <b>Goal:</b> march up the table and destroy the enemy castle (king). Yours is at the bottom. If nobody does, <b>the player who owns more tiles when the rounds run out wins</b> (a tie goes to the healthier castle).<br>
-      <b>Land:</b> the board is 9 rows. Rows 1-4 start as yours (blue), rows 6-9 as theirs (red), row 5 is neutral. <b>Stepping on a tile claims it</b>, and it stays yours after you leave until an enemy steps on it. Hidden rogues claim nothing. The <b>♣ Land Grab</b> card claims a 3x3 area next to your land (not tiles holding enemy units).<br>
-      <b>Outposts ⚑:</b> four marked tiles. Hold one with a unit for a full turn, then build a <b>🏹 Lookout</b> (a ranged unit standing there shoots one tile further), a <b>⛺ Bunker</b> (+1 infantry each turn, and your infantry can be placed around it) or a <b>⛏ Gold Mine</b> (+1 mana each turn). They work for whoever is standing on them.<br>
-      <b>Legend ★:</b> your king can summon a Legend (the button above your hand). It moves up to 3 tiles a turn, claims every tile it lands on, and is about twice as tough as a normal unit. The more land you own the higher its level, and the more mana it costs. Only one at a time: after it falls you wait as many turns as it cost.<br>
-      <b>Each turn:</b> you draw 1 squad card (hand up to 8; you start with 5) and get <b>1 free infantry</b> to place straight away. <b>Mana</b> is 1 on your first turn, 2 on your second, up to 10: spend it to play <b>as many cards from your hand as you can afford</b> (the number in the corner is the cost). Spend 1 mana once a turn to swap the free infantry for the next one. An unplaced infantry, and any card drawn into a full hand, goes to the bottom of its deck. When a deck runs out, its discard pile is shuffled back in.<br>
-      <b>Move</b> up to 3 units a step each (forward or sideways), but only units on the board when your turn began. Every unit may attack once.
-      New cards appear on your back row. <b>Defence</b> units (▣ and ♠) can also go anywhere within 2 tiles of your king.<br>
+      <b>Land:</b> the board is 5 wide and 7 deep, and each king sits off the grid one row behind your back row. Your 3 back rows start as yours (blue), the enemy's 3 as theirs (red), the middle row is neutral. <b>Stepping on a tile claims it</b>, and it stays yours after you leave until an enemy steps on it. Hidden rogues claim nothing. The <b>♣ Land Grab</b> card claims a 3x3 area next to your land (not tiles holding enemy units).<br>
+      <b>Outposts ⚑:</b> two marked tiles near the middle. Hold one with a unit for a full turn, then build a <b>🏹 Lookout</b> (a ranged unit standing there shoots one tile further), a <b>⛺ Bunker</b> (+1 infantry each turn, and your infantry can be placed around it) or a <b>⛏ Gold Mine</b> (+1 mana each turn). They work for whoever is standing on them.<br>
+      <b>Legend ★:</b> your king can summon a Legend (the button above your hand). Its move of up to 3 tiles costs one action, it claims every tile it lands on, and is about twice as tough as a normal unit. The more land you own the higher its level, and the more mana it costs. Only one at a time: after it falls you wait as many turns as it cost.<br>
+      <b>Each turn:</b> you draw 1 squad card (hand up to 6; you start with 4) and get <b>1 free infantry</b> to place straight away. <b>Mana</b> is 1 on your first turn, 2 on your second, up to 10: spend it to play <b>as many cards from your hand as you can afford</b> (the number in the corner is the cost). An unplaced infantry, and any card drawn into a full hand, goes to the bottom of its deck. When a deck runs out, its discard pile is shuffled back in.<br>
+      <b>You have 3 actions a turn.</b> Each <b>move</b> (a step forward or sideways, only for units on the board when your turn began) and each <b>attack</b> (once per unit) uses one. Playing cards uses mana, not actions.
+      New cards appear on your back row. <b>Defence</b> units (▣ and ♠) can also go in your first two rows.<br>
       <b>Rogues 🗡</b> start <b>hidden</b>: they can't be targeted. A hidden rogue moves 2 tiles in any direction and has <b>one</b> special action, which reveals it for good:
       lay a trap (☠ Poison 1 damage on each of its next 2 turns · 🕸 Sticky can't move next turn · ✦ Flash can't attack next turn) on an empty tile next to it, throw a 💣 bomb (exactly 2 tiles away, 1 damage to that tile and every tile around it, <i>friends too</i>, ignores armour), or make a <b>sneak attack</b> for double damage. After that it is a plain melee unit. Enemies that step on a trap spring it.<br>
       <b>Arrives / On fall:</b> many squad units do something when they are played (<i>Arrives</i>: claim tiles, shove enemies, reveal rogues, lay a trap, draw, heal) or when they die (<i>On fall</i>: damage or poison the enemies next to them, leave a Skeleton or a trap, keep their land, armour for friends, +1 mana next turn). Click a card in your hand to read it in full. Each card's art also sets its rarity label.<br>

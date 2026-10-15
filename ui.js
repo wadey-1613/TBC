@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   const E = window.TBC;
-  const { CARDS, SYM, SUIT_ROLE, CLS_SYM, TRAPS, OUTPOSTS, LEGEND_LEVELS, ROWS, COLS, HAND_MAX, newGame, legalActions, applyAction, sameRef, locEq, isKing, AI } = E;
+  const { CARDS, SYM, SUIT_ROLE, CLS_SYM, TRAPS, OUTPOSTS, LEGEND_LEVELS, ROWS, COLS, KING_C, HAND_MAX, newGame, legalActions, applyAction, sameRef, locEq, isKing, AI } = E;
   const ME = 0;
   // card art for the four infantry classes (the published page inlines these as data URIs)
   const ART = window.TBC_ART || { melee: 'art/melee.jpg', ranged: 'art/ranged.jpg', defence: 'art/defence.jpg', rogue: 'art/rogue.jpg' };
@@ -137,7 +137,7 @@
   // The opponent's turn is replayed action by action so you can follow it. Before it moves it "thinks" for a random
   // 1-10 seconds (once per turn by default, or before every action). Small actions are quick, fights and card plays
   // linger a little. Speed and thinking can be changed, and Skip finishes the turn at once.
-  const AI_PACE = { attack: 360, play: 480, summon: 600, build: 500, trap: 340, bomb: 420, move: 200, deploy: 260, swapInf: 80, end: 120 };
+  const AI_PACE = { attack: 360, play: 480, summon: 600, build: 500, trap: 340, bomb: 420, move: 200, deploy: 260, end: 120 };
   const AI_SPEED = { normal: 1, fast: 0.3, instant: 0 };
   const THINK_MODES = ['turn', 'action', 'off'];
   let aiSpeed = 'normal', aiThinkMode = 'turn', aiSkip = false, aiThinking = false, thoughtThisTurn = false, thinkTimer = null, thinkResume = null;
@@ -227,7 +227,7 @@
       : pl.legendCd > 0 ? `<span title="A fallen Legend takes as many turns to come back as it cost">Legend back in <b>${pl.legendCd}</b></span>`
       : `<span title="Land owned sets the level: more land, a stronger Legend that costs more mana (and takes that many turns to return if it falls)">Legend ready <b>★${lv} · ${LEGEND_LEVELS[lv].cost} mana</b></span>`;
     const clock = p === ME ? `<span title="When the rounds run out, whoever owns more tiles wins">Round <b>${Math.min(E.MAX_TURNS / 2, Math.ceil(state.turn / 2))}/${E.MAX_TURNS / 2}</b></span>` : '';
-    return `<b>${p === ME ? 'You' : 'Opponent'}</b><span title="Tiles owned. Land you step on is yours until the enemy steps on it">Land <b>${E.tileCount(state, p)}</b></span>${legend}<span>Castle <b>♥${k.hp}/${k.maxHp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span title="Mana: spend it to play cards">Mana ${mana}</span><span>Moves <b>${pl.moves}</b></span>`
+    return `<b>${p === ME ? 'You' : 'Opponent'}</b><span title="Tiles owned. Land you step on is yours until the enemy steps on it">Land <b>${E.tileCount(state, p)}</b></span>${legend}<span>Castle <b>♥${k.hp}/${k.maxHp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span title="Mana: spend it to play cards">Mana ${mana}</span><span title="Each move or attack uses one action">Actions <b>${pl.ap}</b></span>`
       + `<span>Hand <b>${pl.hand.length}</b></span><span title="Traps this player has on the board">Traps <b>${state.traps.filter((t) => t.p === p).length}</b></span><span>Deck <b>${pl.deck.length}</b></span><span>Infantry <b>${pl.infDeck.length}</b></span>${clock}`
       + `<span class="grow"></span>${p !== ME && aiThinking ? '<span class="think">💭 thinking<span class="dots"><i>.</i><i>.</i><i>.</i></span></span>' : state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
   }
@@ -240,7 +240,10 @@
     return s.join(' ');
   }
 
+  // the two king rows have only the king's tile; the other tiles there don't exist
+  const isVoid = (r, c) => (r === 0 || r === ROWS - 1) && c !== KING_C;
   function tileHtml(r, c, rem) {
+    if (isVoid(r, c)) return '<div class="cell void"></div>';
     const u = state.board[r][c], ref = { r, c };
     const isDest = pending !== null && pending.cell === undefined && rem.some((a) => locEq(a.cell, ref));
     const ow = state.owner[r][c], home = ow === 0 ? ' own0' : ow === 1 ? ' own1' : '';
@@ -248,7 +251,7 @@
     const opHtml = op ? `<div class="op" title="${op.kind ? OUTPOSTS[op.kind].name + ': ' + OUTPOSTS[op.kind].text + ' Works for whoever stands on it.' : 'Outpost site: hold it with a unit for a full turn, then build a Lookout, Bunker or Gold Mine here.'}">${op.kind ? OUTPOSTS[op.kind].sym : '⚑'}</div>` : '';
     const ko = deaths.has(r * COLS + c);
     const isGrab = pending !== null && pending.target === undefined && rem.some((a) => a.target && sameRef(a.target, ref));
-    const attrs = `class="cell${home}${op ? ' outpost' : ''}${isGrab && !u ? ' grab' : ''}${isDest ? ' dest' : ''}${reachSet.has(r * COLS + c) ? ' reach' : ''}${ko ? ' ko' : ''}" data-r="${r}" data-c="${c}"`;
+    const attrs = `class="cell${home}${r === 0 || r === ROWS - 1 ? ' kingrow' : ''}${op ? ' outpost' : ''}${isGrab && !u ? ' grab' : ''}${isDest ? ' dest' : ''}${reachSet.has(r * COLS + c) ? ' reach' : ''}${ko ? ' ko' : ''}" data-r="${r}" data-c="${c}"`;
     if (!u) {
       const t = E.trapAt(state, r, c);
       const trap = t ? `<div class="trap p${t.p}" title="${t.p === ME ? 'Your' : 'Enemy'} ${TRAPS[t.type].name}: ${TRAPS[t.type].text}">${TRAPS[t.type].sym}</div>` : '';
@@ -334,14 +337,14 @@
       if (pl.infHand.length) bits.push('place your free infantry');
       bits.push(`spend your ${pl.mana} mana on cards from your hand${legal.some((a) => a.t === 'summon') ? ' or on your king\'s Legend' : ''}`);
       if (legal.some((a) => a.t === 'build')) bits.push('build on the outpost you are holding');
-      return 'Your turn: ' + bits.join(', ') + '. Select a green unit to move or attack (' + pl.moves + ' move' + (pl.moves === 1 ? '' : 's') + ' left).';
+      return 'Your turn: ' + bits.join(', ') + '. Select a green unit to move or attack (' + pl.ap + ' action' + (pl.ap === 1 ? '' : 's') + ' left).';
     }
-    if (pending.summon) return 'Choose a tile next to your king for the Legend. It moves up to 3 tiles a turn and claims every tile it lands on.';
-    if (pending.deploy !== undefined) return 'Choose a tile for the infantry (free). Defence units can go within 2 tiles of your king; archers can go into a Siege Tower.';
+    if (pending.summon) return 'Choose a tile next to your king for the Legend. It makes a 3-tile move for one action and claims every tile it lands on.';
+    if (pending.deploy !== undefined) return 'Choose a tile for the infantry (free). Defence units can go in your first two rows; archers can go into a Siege Tower.';
     if (pending.hand !== undefined) {
       const needCell = remaining().some((a) => a.cell !== undefined);
       if (!needCell && remaining().some((a) => a.target && !CARDS[state.players[ME].hand[pending.hand]].inf && CARDS[state.players[ME].hand[pending.hand]].target === 'tile')) return 'Choose the centre of the 3x3 area to claim (it must touch your land; tiles with enemy units are not taken).';
-      return needCell && pending.cell === undefined ? 'Choose a tile for it. Defence units can go within 2 tiles of your king; archers can go into a Siege Tower.' : 'Choose a target.';
+      return needCell && pending.cell === undefined ? 'Choose a tile for it. Defence units can go in your first two rows; archers can go into a Siege Tower.' : 'Choose a target.';
     }
     if (pending.mode === 'trap') return 'Choose an empty tile next to the rogue for the trap.';
     if (pending.mode === 'bomb') return 'Choose a landing tile exactly 2 away. The blast hits that tile and every tile around it, friends too.';
@@ -367,7 +370,6 @@
       cv.classList.add('show');
     } else { preview = null; cv.classList.remove('show'); cv.innerHTML = ''; }
     $('endBtn').disabled = !myTurn();
-    $('swapBtn').disabled = !(myTurn() && legal.some((a) => a.t === 'swapInf'));
     const sel = pending && pending.from && state.board[pending.from.r][pending.from.c];
     const has = (t) => !!(myTurn() && sel && legal.some((a) => a.t === t && locEq(a.from, pending.from)));
     const canSummon = myTurn() && legal.some((a) => a.t === 'summon'), lv = E.legendLevel(state, ME);
@@ -403,7 +405,6 @@
   $('aiThink').onchange = () => { aiThinkMode = $('aiThink').value; try { localStorage.setItem('tbc-ai-think', aiThinkMode); } catch (e) { /* ignore */ } };
   $('skipBtn').onclick = () => { aiSkip = true; if (thinkResume) thinkResume(); };
   $('noteBtn').onclick = () => { if (rec) saveGame(); };
-  $('swapBtn').onclick = () => { if (myTurn()) run({ t: 'swapInf', pick: 0 }); };
   $('endBtn').onclick = () => { if (myTurn()) run({ t: 'end' }); };
   const toggleMode = (mode) => { if (pending && pending.from) { pending = { from: pending.from, mode: pending.mode === mode ? undefined : mode }; render(); } };
   $('summonBtn').onclick = () => { if (myTurn()) { pending = pending && pending.summon ? null : { summon: true }; render(); } };
