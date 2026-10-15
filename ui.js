@@ -4,10 +4,8 @@
   const { CARDS, SYM, SUIT_ROLE, CLS_SYM, TRAPS, ROWS, COLS, HAND_MAX, newGame, legalActions, applyAction, sameRef, locEq, isKing, AI } = E;
   const ME = 0;
   const $ = (id) => document.getElementById(id);
-  let state = null, pending = null, legal = [], aiRunning = false;
+  let state = null, pending = null, legal = [], aiRunning = false, notice = '';
   let prevUnits = new Map(), changes = new Map(), deaths = new Map(), reachSet = new Set();
-  // pop-up progress for the current turn
-  let flagTurn = -1, infDone = false, squadDone = false, squadForce = false, infRoles = [], infSeen = -1, sqSel = null;
 
   // ------------------------------------------------------------ game recorder
   // Every action (yours and the AI's) is logged with the seed, so a finished game can be replayed exactly.
@@ -62,7 +60,7 @@
   const myTurn = () => state.active === ME && !aiRunning && state.winner == null;
 
   function run(a) {
-    pending = null;
+    pending = null; notice = '';
     doAction(a);
     afterAction();
   }
@@ -75,13 +73,28 @@
 
   function onHand(i) {
     if (!myTurn()) return;
-    if (!legal.some((a) => a.t === 'play' && a.hand === i)) { pending = null; return render(); }
+    notice = '';
+    const pl = state.players[ME], c = CARDS[pl.hand[i]];
+    if (!legal.some((a) => a.t === 'play' && a.hand === i)) {
+      pending = null;
+      notice = c.cost > pl.mana ? `${c.name} costs ${c.cost} mana and you have ${pl.mana}.` : `${c.name} can't be played right now (nothing in reach, or nowhere to put it).`;
+      return render();
+    }
     pending = pending && pending.hand === i ? null : { hand: i };
     tryExecute(); // boosts with no choices fire immediately
   }
 
+  function onInfantry(pick) {
+    if (!myTurn()) return;
+    notice = '';
+    if (!legal.some((a) => a.t === 'deploy' && a.pick === pick)) { pending = null; return render(); }
+    pending = pending && pending.deploy === pick ? null : { deploy: pick };
+    render();
+  }
+
   function onTile(ref) {
     if (!myTurn()) return;
+    notice = '';
     if (pending) {
       const rem = remaining();
       if (pending.cell === undefined && rem.some((a) => locEq(a.cell, ref))) { pending.cell = ref; return tryExecute(); }
@@ -101,9 +114,9 @@
   }
 
   // The opponent's turn is replayed action by action so you can follow it. Before it moves it "thinks" for a random
-  // 1-10 seconds (once per turn by default, or before every action). Small bookkeeping actions are quick, fights and
-  // card plays linger a little. Speed and thinking can be changed, and Skip finishes the turn at once.
-  const AI_PACE = { attack: 360, play: 480, trap: 340, move: 200, deploy: 260, hold: 120, holdInf: 80, recycle: 80, discardInf: 40, discardSquad: 40, end: 120 };
+  // 1-10 seconds (once per turn by default, or before every action). Small actions are quick, fights and card plays
+  // linger a little. Speed and thinking can be changed, and Skip finishes the turn at once.
+  const AI_PACE = { attack: 360, play: 480, trap: 340, bomb: 420, move: 200, deploy: 260, swapInf: 80, end: 120 };
   const AI_SPEED = { normal: 1, fast: 0.3, instant: 0 };
   const THINK_MODES = ['turn', 'action', 'off'];
   let aiSpeed = 'normal', aiThinkMode = 'turn', aiSkip = false, aiThinking = false, thoughtThisTurn = false, thinkTimer = null, thinkResume = null;
@@ -154,7 +167,7 @@
 
   function showMenu() {
     $('overlayBox').innerHTML = `<h1>King's Table</h1>
-      <p>March up the table and take the enemy castle.<br>Each turn a pop-up offers 3 infantry and 2 squad cards. Pick, then move and fight.</p><button id="go">Start game</button>`;
+      <p>March up the table and take the enemy castle.<br>Draw a card, spend your mana, place your free infantry, then move and fight.</p><button id="go">Start game</button>`;
     $('overlay').classList.add('show');
     $('go').onclick = start;
   }
@@ -165,18 +178,18 @@
     rec = { id: 'g' + Date.now().toString(36) + '-' + seed, seed, startedAt: Date.now(), actions: [] };
     setStatus('Starting the game record…'); saveGame();   // saving at the start means any permission prompt appears now, not mid-turn
     if ($('noteBox')) $('noteBox').value = '';
-    pending = null; aiRunning = false; prevUnits = new Map(); flagTurn = -1; infSeen = -1; infRoles = [];
+    pending = null; aiRunning = false; prevUnits = new Map(); notice = '';
     $('overlay').classList.remove('show');
     render();
   }
 
   // ------------------------------------------------------------ rendering helpers
   const red = (suit) => suit === 'H' || suit === 'D';
-  const REACH = { melee: 'melee · 8 around', range: 'range · 2nd & 3rd row ahead', defence: 'defence · front arc', none: 'cannot attack · moves 2' };
+  const REACH = { melee: 'melee · 8 around', range: 'range · 2nd & 3rd row ahead', defence: 'defence · front arc', none: 'cannot attack' };
   const reachLabel = (c) => (c.atk === 0 ? 'cannot attack' : REACH[c.reach]);
   const kwText = (c) => (c.kind === 'spell' ? c.kw : [reachLabel(c)].concat(c.kw)).join(' · ');
 
-  // attack / armour / health pills. `now` is the live unit (or null for a card)
+  // attack / armour plates / health pills. `now` is the live unit (or null for a card)
   function statsHtml(id, now) {
     const c = CARDS[id];
     const atk = now ? now.atk : c.atk, arm = now ? now.armor : c.armor, hp = now ? now.hp : c.hp, max = now ? now.maxHp : c.hp, maxA = now ? now.maxArmor : c.armor;
@@ -187,8 +200,9 @@
 
   function barHtml(p) {
     const pl = state.players[p], k = E.kingOf(state, p);
-    return `<b>${p === ME ? 'You' : 'Opponent'}</b><span>Castle <b>♥${k.hp}/${k.maxHp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span>Moves <b>${pl.moves}</b></span>`
-      + `<span title="Traps this player has on the board">Traps <b>${state.traps.filter((t) => t.p === p).length}</b></span><span>Squad deck <b>${pl.deck.length}</b>/${pl.squadDiscard.length}</span><span>Infantry <b>${pl.infDeck.length}</b>/${pl.infDiscard.length}</span>`
+    const mana = `<span class="mana">${'●'.repeat(pl.mana)}<span class="off">${'●'.repeat(pl.maxMana - pl.mana)}</span></span> <b>${pl.mana}/${pl.maxMana}</b>`;
+    return `<b>${p === ME ? 'You' : 'Opponent'}</b><span>Castle <b>♥${k.hp}/${k.maxHp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span title="Mana: spend it to play cards">Mana ${mana}</span><span>Moves <b>${pl.moves}</b></span>`
+      + `<span>Hand <b>${pl.hand.length}</b></span><span title="Traps this player has on the board">Traps <b>${state.traps.filter((t) => t.p === p).length}</b></span><span>Deck <b>${pl.deck.length}</b></span><span>Infantry <b>${pl.infDeck.length}</b></span>`
       + `<span class="grow"></span>${p !== ME && aiThinking ? '<span class="think">💭 thinking<span class="dots"><i>.</i><i>.</i><i>.</i></span></span>' : state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
   }
 
@@ -231,7 +245,7 @@
       + `<div class="hpbar"><i class="${barCls}" style="width:${Math.round(ratio * 100)}%"></i></div>${stats}</div>${num}</div>`;
   }
 
-  // compare with the previous render so hits, heals and kills can be flashed
+  // compare with the previous render so hits, armour loss, heals and kills can be flashed
   function trackChanges() {
     changes = new Map(); deaths = new Map();
     const cur = new Map();
@@ -255,103 +269,42 @@
 
   function cardHtml(id, opts) {
     const c = CARDS[id];
-    const cls = ['card', opts.big ? 'big' : '', c.inf ? 'inf' : c.suit, opts.playable ? 'playable' : 'dim', opts.selected ? 'selected' : ''].join(' ');
+    const cls = ['card', c.inf ? 'inf free' : c.suit, opts.playable ? 'playable' : 'dim', opts.selected ? 'selected' : ''].join(' ');
     const top = c.inf ? CLS_SYM[c.cls] : `${c.rank}${SYM[c.suit]}`;
     const type = c.inf ? `${c.cls} infantry` : `${c.kind === 'spell' ? 'Boost' : 'Unit'} · ${SUIT_ROLE[c.suit]}`;
-    const ribbon = opts.role ? `<div class="ribbon ${opts.role}">${opts.role.toUpperCase()}</div>` : '';
-    const note = opts.note ? `<div class="notetag">${opts.note}</div>` : '';
-    return `<div class="${cls}" ${opts.attr || ''}>${ribbon}${note}<div class="top ${red(c.suit) ? 'red' : ''}">${top}</div><div class="nm">${c.name}</div>
+    const cost = c.inf ? '<div class="cost">FREE</div>' : `<div class="cost" title="Costs ${c.cost} mana">${c.cost}</div>`;
+    return `<div class="${cls}" ${opts.attr || ''} title="${c.name}${c.text ? ': ' + c.text.replace(/"/g, '&quot;') : ''}">${cost}<div class="top ${red(c.suit) ? 'red' : ''}">${top}</div><div class="nm">${c.name}</div>
       <div class="ty">${type}</div><div class="tags">${kwText(c)}</div><div class="tx">${c.text}</div>${c.kind === 'unit' ? statsHtml(id, null) : '<div class="stats"></div>'}</div>`;
   }
 
   function handHtml() {
     const pl = state.players[ME];
-    let html = pl.hand.map((id, i) => cardHtml(id, { playable: myTurn() && legal.some((a) => a.t === 'play' && a.hand === i), selected: pending && pending.hand === i, attr: `data-hand="${i}"`, note: i >= pl.hand.length - pl.fresh ? 'plays next turn' : '' })).join('');
-    for (let i = pl.hand.length; i < HAND_MAX; i++) html += '<div class="card empty">empty hand slot</div>';
+    let html = pl.hand.map((id, i) => cardHtml(id, { playable: myTurn() && legal.some((a) => a.t === 'play' && a.hand === i), selected: pending && pending.hand === i, attr: `data-hand="${i}"` })).join('');
+    for (let i = pl.hand.length; i < HAND_MAX; i++) html += '<div class="card empty"></div>';
     return html;
   }
 
-  // ------------------------------------------------------------ pop-ups (infantry, then squad)
-  const canDeploy = () => legal.some((a) => a.t === 'deploy');
-
-  const roleCount = (role) => infRoles.filter((r) => r === role).length;
-  function roleAllowed(role, i) {
-    if (infRoles[i] === role) return true;                                   // toggling off is always fine
+  function infantryHtml() {
     const pl = state.players[ME];
-    if (role === 'deploy') return canDeploy() && roleCount('deploy') < pl.deploys;
-    if (role === 'recycle') return roleCount('recycle') < pl.recycles;
-    return roleCount('hold') < HAND_MAX - pl.hand.length;                    // hold
+    if (!pl.infHand.length) return '<div class="card empty">placed</div>';
+    return pl.infHand.map((id, i) => cardHtml(id, { playable: myTurn() && legal.some((a) => a.t === 'deploy' && a.pick === i), selected: pending && pending.deploy === i, attr: `data-inf="${i}"` })).join('');
   }
-
-  function infantryPicker() {
-    const pl = state.players[ME];
-    while (infRoles.length < pl.infOffer.length) infRoles.push(null);
-    const nDep = roleCount('deploy');
-    let step = 'Choose what to do with each card. Anything you leave is discarded.';
-    if (!canDeploy()) step = 'There is no room to deploy. You can still recycle or hold. Anything you leave is discarded.';
-    else if (nDep === 0) step = 'Deploy one onto the board, recycle one to the bottom of your deck, or hold one in your hand. The rest are discarded.';
-    const labels = { deploy: 'Deploy', recycle: 'Recycle', hold: 'Hold in hand' };
-    const cards = pl.infOffer.map((id, i) => {
-      const role = infRoles[i];
-      const btns = ['deploy', 'recycle', 'hold'].map((r) => `<button class="${role === r ? '' : 'alt'}" data-irole="${r}" data-i="${i}" ${roleAllowed(r, i) ? '' : 'disabled'}>${labels[r]}</button>`).join('');
-      return `<div class="pickcol">${cardHtml(id, { big: true, playable: true, selected: !!role, role: role || 'discard' })}${btns}</div>`;
-    }).join('');
-    $('pickerBox').innerHTML = `<h2>Choose your infantry</h2><p>${step}</p><div class="pickrow">${cards}</div>`
-      + `<div class="btnrow"><button id="infRedo" class="alt" ${infRoles.some(Boolean) ? '' : 'disabled'}>Start again</button><button id="infOk">Confirm</button></div>`;
-  }
-
-  function squadPicker() {
-    const pl = state.players[ME];
-    const cards = pl.squadOffer.map((id, k) => {
-      const canPlay = legal.some((a) => a.t === 'play' && a.hand === -1 - k), canHold = legal.some((a) => a.t === 'hold' && a.pick === k);
-      const sel = sqSel === k;
-      return `<div class="pickcol">${cardHtml(id, { big: true, playable: true, selected: sel, attr: `data-sq="${k}"` })}`
-        + (sel ? `<button data-sqplay="${k}" ${canPlay ? '' : 'disabled'}>Play now</button><button class="alt" data-sqhold="${k}" ${canHold ? '' : 'disabled'}>${canHold ? 'Hold in hand' : 'Hand is full'}</button>` : '') + '</div>';
-    }).join('');
-    $('pickerBox').innerHTML = `<h2>Choose a squad card</h2><p>Play one now or hold it in your hand (max 3). The other is discarded.</p><div class="pickrow">${cards}</div>`
-      + `<div class="btnrow"><button class="alt small" id="sqLater">Decide later</button><button class="alt small" id="sqDiscard">Discard both</button></div>`;
-  }
-
-  function renderPicker() {
-    const pl = state.players[ME];
-    let mode = null;
-    if (myTurn()) {
-      const infResolved = pl.infOffer.length === 0 || !canDeploy();
-      if (!infDone && pl.infOffer.length > 0) mode = 'inf';
-      else if (pl.squadOffer.length > 0 && !squadDone && (infResolved || squadForce) && !pending) mode = 'squad';
-    }
-    $('picker').classList.toggle('show', mode !== null);
-    if (mode === 'inf') infantryPicker();
-    else if (mode === 'squad') squadPicker();
-  }
-
-  function confirmInfantry() {
-    const pl = state.players[ME];
-    const moves = [];
-    pl.infOffer.forEach((id, i) => {
-      const role = infRoles[i];
-      if (role !== 'deploy') moves.push({ i, t: role === 'recycle' ? 'recycle' : role === 'hold' ? 'holdInf' : 'discardInf' });
-    });
-    moves.sort((a, b) => b.i - a.i).forEach((m) => doAction({ t: m.t, pick: m.i }));
-    infDone = true; infRoles = [];
-    pending = pl.infOffer.length > 0 && canDeployNow() ? { deploy: 0 } : null;
-    render();
-  }
-  const canDeployNow = () => state.players[ME].deploys > 0 && legalActions(state).some((a) => a.t === 'deploy');
 
   function hint() {
     const pl = state.players[ME];
     if (state.winner != null) return state.reason;
     if (state.active !== ME) return aiThinking ? 'Opponent is thinking about what to do next… (Skip opponent to hurry it up)' : 'Opponent is playing… (Skip opponent to finish its turn)';
+    if (notice) return notice;
     if (!pending) {
       const bits = [];
-      if (pl.infOffer.length && infDone && canDeploy()) bits.push('place your infantry');
-      return 'Your turn: ' + (bits.length ? bits.join(', ') + '. ' : '') + 'Select a green unit to move or attack (' + pl.moves + ' move' + (pl.moves === 1 ? '' : 's') + ' left), or play one card from your hand (1 a turn).';
+      if (pl.infHand.length) bits.push('place your free infantry');
+      bits.push(`spend your ${pl.mana} mana on cards from your hand`);
+      return 'Your turn: ' + bits.join(', ') + '. Select a green unit to move or attack (' + pl.moves + ' move' + (pl.moves === 1 ? '' : 's') + ' left).';
     }
-    if (pending.deploy !== undefined) return 'Choose a tile for the infantry. Defence units can go within 2 tiles of your king.';
+    if (pending.deploy !== undefined) return 'Choose a tile for the infantry (free). Defence units can go within 2 tiles of your king; archers can go into a Siege Tower.';
     if (pending.hand !== undefined) {
       const needCell = remaining().some((a) => a.cell !== undefined);
-      return needCell && pending.cell === undefined ? 'Choose a tile for it. Defence units can go within 2 tiles of your king.' : 'Choose a target.';
+      return needCell && pending.cell === undefined ? 'Choose a tile for it. Defence units can go within 2 tiles of your king; archers can go into a Siege Tower.' : 'Choose a target.';
     }
     if (pending.mode === 'trap') return 'Choose an empty tile next to the rogue for the trap.';
     if (pending.mode === 'bomb') return 'Choose a landing tile exactly 2 away. The blast hits that tile and every tile around it, friends too.';
@@ -359,27 +312,22 @@
   }
 
   function render() {
-    if (state.turn !== flagTurn) { flagTurn = state.turn; squadDone = false; squadForce = false; sqSel = null; }
     legal = state.active === ME && state.winner == null ? legalActions(state) : [];
-    const pl = state.players[ME];
-    if (pl.infOfferId !== infSeen) { infSeen = pl.infOfferId; infDone = false; infRoles = []; }          // a new turn, or Reinforcements: a fresh infantry offer
     trackChanges();
     $('board').innerHTML = boardHtml();
     $('foeBar').innerHTML = barHtml(1 - ME);
     $('myBar').innerHTML = barHtml(ME);
+    $('infantry').innerHTML = infantryHtml();
     $('hand').innerHTML = handHtml();
+    $('handInfo').textContent = `${state.players[ME].hand.length}/${HAND_MAX}`;
     $('hint').textContent = hint();
     $('endBtn').disabled = !myTurn();
+    $('swapBtn').disabled = !(myTurn() && legal.some((a) => a.t === 'swapInf'));
     const sel = pending && pending.from && state.board[pending.from.r][pending.from.c];
     const has = (t) => !!(myTurn() && sel && legal.some((a) => a.t === t && locEq(a.from, pending.from)));
     $('trapBtn').hidden = !has('trap'); $('bombBtn').hidden = !has('bomb');
     $('trapBtn').textContent = pending && pending.mode === 'trap' ? 'Cancel trap' : 'Lay trap';
     $('bombBtn').textContent = pending && pending.mode === 'bomb' ? 'Cancel bomb' : 'Throw bomb';
-    const placeable = myTurn() && infDone && pl.infOffer.length > 0 && canDeploy() && !pending;
-    $('placeBtn').hidden = !placeable;
-    if (placeable) $('placeBtn').textContent = 'Place ' + CARDS[pl.infOffer[0]].name;
-    $('offerBtn').hidden = !(myTurn() && pl.squadOffer.length > 0 && squadDone);
-    renderPicker();
     const logEl = $('log');
     logEl.innerHTML = state.log.map((l) => `<div>${l}</div>`).join('');
     logEl.scrollTop = logEl.scrollHeight;
@@ -388,40 +336,25 @@
   // ------------------------------------------------------------ events
   document.addEventListener('click', (e) => {
     const t = e.target;
-    const ir = t.closest('[data-irole]');
-    if (ir) {
-      const i = +ir.dataset.i, role = ir.dataset.irole;
-      infRoles[i] = infRoles[i] === role ? null : (roleAllowed(role, i) ? role : infRoles[i]);
-      return render();
-    }
-    if (t.closest('#infRedo')) { infRoles = []; return render(); }
-    if (t.closest('#infOk')) return confirmInfantry();
-    const sq = t.closest('[data-sq]');
-    if (sq) { sqSel = +sq.dataset.sq === sqSel ? null : +sq.dataset.sq; return render(); }
-    const sp = t.closest('[data-sqplay]');
-    if (sp) { const k = +sp.dataset.sqplay; squadDone = true; sqSel = null; pending = { hand: -1 - k }; return tryExecute(); }
-    const sh = t.closest('[data-sqhold]');
-    if (sh) { squadDone = true; const k = +sh.dataset.sqhold; sqSel = null; return run({ t: 'hold', pick: k }); }
-    if (t.closest('#sqLater')) { squadDone = true; sqSel = null; return render(); }
-    if (t.closest('#sqDiscard')) { squadDone = true; sqSel = null; [1, 0].forEach((i) => { if (state.players[ME].squadOffer[i] !== undefined) doAction({ t: 'discardSquad', pick: i }); }); return render(); }
     const hand = t.closest('[data-hand]');
     if (hand) return onHand(+hand.dataset.hand);
+    const inf = t.closest('[data-inf]');
+    if (inf) return onInfantry(+inf.dataset.inf);
     const cell = t.closest('.cell');
     if (cell) return onTile({ r: +cell.dataset.r, c: +cell.dataset.c });
   });
-  $('noteBtn').onclick = () => { if (rec) { saveGame(); } };
   $('aiSpeed').value = aiSpeed;
   $('aiSpeed').onchange = () => { aiSpeed = $('aiSpeed').value; try { localStorage.setItem('tbc-ai-speed', aiSpeed); } catch (e) { /* ignore */ } };
   $('aiThink').value = aiThinkMode;
   $('aiThink').onchange = () => { aiThinkMode = $('aiThink').value; try { localStorage.setItem('tbc-ai-think', aiThinkMode); } catch (e) { /* ignore */ } };
   $('skipBtn').onclick = () => { aiSkip = true; if (thinkResume) thinkResume(); };
+  $('noteBtn').onclick = () => { if (rec) saveGame(); };
+  $('swapBtn').onclick = () => { if (myTurn()) run({ t: 'swapInf', pick: 0 }); };
   $('endBtn').onclick = () => { if (myTurn()) run({ t: 'end' }); };
   const toggleMode = (mode) => { if (pending && pending.from) { pending = { from: pending.from, mode: pending.mode === mode ? undefined : mode }; render(); } };
   $('trapBtn').onclick = () => toggleMode('trap');
   $('bombBtn').onclick = () => toggleMode('bomb');
-  $('placeBtn').onclick = () => { pending = { deploy: 0 }; render(); };
-  $('offerBtn').onclick = () => { squadDone = false; squadForce = true; pending = null; render(); };
-  const cancel = () => { pending = null; if (state) render(); };
+  const cancel = () => { pending = null; notice = ''; if (state) render(); };
   document.addEventListener('contextmenu', (e) => { e.preventDefault(); cancel(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancel(); });
 

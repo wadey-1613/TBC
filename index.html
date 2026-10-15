@@ -62,8 +62,17 @@
   @keyframes dot { 0%,60%,100% { opacity:.2; } 30% { opacity:1; } }
   .notetag { position:absolute; top:-1px; right:-1px; background:#3a4560; color:var(--text); font-size:9px; font-weight:800; padding:2px 6px; border-radius:0 7px 0 7px; text-transform:uppercase; z-index:2; }
   #hint { color:var(--dim); flex:1; min-width:200px; }
-  #hand { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
-  .card { height:132px; background:linear-gradient(#303853,#232a3d); border:2px solid var(--line); border-top:5px solid var(--line); border-radius:9px; padding:4px 6px; display:flex; flex-direction:column; gap:2px; min-width:0; position:relative; }
+  #handrow { display:flex; gap:12px; align-items:flex-start; }
+  #handrow h4 { margin:0 0 4px; font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; }
+  #infslot { width:112px; flex:none; display:flex; flex-direction:column; gap:4px; }
+  #infslot .card { width:100%; }
+  #handwrap { flex:1; min-width:0; }
+  #hand { display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); gap:5px; }
+  #hand .card { padding:4px 3px; } #hand .card .pill { font-size:11px; gap:1px; padding:1px 0; } #hand .card .nm { font-size:11px; } #hand .card .tx { font-size:9px; } #hand .card .tags { font-size:8px; } #hand .card .ty { font-size:8px; }
+  .mana { letter-spacing:1px; color:#5aa2ff; } .mana .off { color:#34405a; }
+  .card .cost { position:absolute; top:-8px; left:-8px; width:24px; height:24px; border-radius:50%; background:#3d6dff; border:2px solid #fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:13px; z-index:3; }
+  .card.free .cost { background:#2c8c5a; width:auto; padding:0 6px; border-radius:11px; font-size:10px; }
+  .card { height:150px; background:linear-gradient(#303853,#232a3d); border:2px solid var(--line); border-top:5px solid var(--line); border-radius:9px; padding:4px 6px; display:flex; flex-direction:column; gap:2px; min-width:0; position:relative; }
   .card.S { border-top-color:var(--S); } .card.C { border-top-color:var(--C); } .card.D { border-top-color:var(--D); } .card.H { border-top-color:var(--H); } .card.inf { border-top-color:var(--I); }
   .card.playable { border-color:var(--ok); cursor:pointer; }
   .card.selected { border-color:#fff; transform:translateY(-3px); }
@@ -113,8 +122,8 @@
     <div id="foeBar" class="bar"></div>
     <div id="board"></div>
     <div id="myBar" class="bar"></div>
-    <div id="actrow"><span id="hint"></span><button id="trapBtn" class="alt small" hidden>Lay trap</button><button id="bombBtn" class="alt small" hidden>Throw bomb</button><button id="placeBtn" class="alt small" hidden></button><button id="offerBtn" class="alt small" hidden>Squad offer</button><button id="endBtn">End turn</button></div>
-    <div id="hand"></div>
+    <div id="actrow"><span id="hint"></span><button id="trapBtn" class="alt small" hidden>Lay trap</button><button id="bombBtn" class="alt small" hidden>Throw bomb</button><button id="endBtn">End turn</button></div>
+    <div id="handrow"><div id="infslot"><h4>Free infantry</h4><div id="infantry"></div><button id="swapBtn" class="alt small">Swap (1 mana)</button></div><div id="handwrap"><h4>Your hand <span id="handInfo"></span></h4><div id="hand"></div></div></div>
   </div>
   <div id="side">
     <div id="oppCtl"><b>Opponent</b><label>speed <select id="aiSpeed"><option value="normal">Normal</option><option value="fast">Fast</option><option value="instant">Instant</option></select></label><label>thinking <select id="aiThink"><option value="turn">1–10 s each turn</option><option value="action">1–10 s before every action</option><option value="off">Off</option></select></label><button id="skipBtn" class="alt small" hidden>Skip opponent</button></div>
@@ -122,8 +131,7 @@
     <div id="rec"><textarea id="noteBox" rows="2" placeholder="Anything odd, unfair or boring? Note it here and press Save note. It is stored with this game."></textarea><div id="recRow"><button id="noteBtn" class="alt small">Save note</button><span id="recStatus"></span></div></div>
     <div id="help">
       <b>Goal:</b> march up the table and destroy the enemy castle (king). Yours is at the bottom.<br>
-      <b>Each turn:</b> a pop-up offers <b>3 infantry</b>: deploy one (free), recycle one to the bottom of the deck, or hold one in your hand. Anything left is discarded. Then <b>2 squad cards</b>: play one now or hold it in your hand, the other is discarded.
-      Your hand holds up to 3 cards (squad cards and infantry) and you can play <b>1 card from your hand per turn</b>. Playing the squad card you were just offered doesn't count, and a card you put into your hand this turn can't be played until your next turn. When a deck runs out, its discard pile is shuffled back in.<br>
+      <b>Each turn:</b> you draw 1 squad card (hand up to 8; you start with 5) and get <b>1 free infantry</b> to place straight away. <b>Mana</b> is 1 on your first turn, 2 on your second, up to 10: spend it to play <b>as many cards from your hand as you can afford</b> (the number in the corner is the cost). Spend 1 mana once a turn to swap the free infantry for the next one. An unplaced infantry, and any card drawn into a full hand, goes to the bottom of its deck. When a deck runs out, its discard pile is shuffled back in.<br>
       <b>Move</b> up to 3 units a step each (forward or sideways), but only units on the board when your turn began. Every unit may attack once.
       New cards appear on your back row. <b>Defence</b> units (▣ and ♠) can also go anywhere within 2 tiles of your king.<br>
       <b>Rogues 🗡</b> start <b>hidden</b>: they can't be targeted. A hidden rogue moves 2 tiles in any direction and has <b>one</b> special action, which reveals it for good:
@@ -141,7 +149,6 @@ x x x      - - -
     </div>
   </div>
 </div>
-<div id="picker"><div class="box" id="pickerBox"></div></div>
 <div id="overlay"><div class="box" id="overlayBox"></div></div>
 <script src="engine.js"></script>
 <script src="ai.js"></script>

@@ -6,7 +6,7 @@
 
   function sideScore(s, p) {
     const pl = s.players[p], king = E.kingOf(s, p), foeKing = E.kingOf(s, 1 - p);
-    let v = king.hp * 3 + king.armor * 4 + pl.hand.length * 2 + pl.infDeck.length * 0.2;
+    let v = king.hp * 3 + king.armor * 4 + pl.hand.length * 2 - pl.mana * 0.6;     // unspent mana is wasted, so spend it
     const home = E.backRow(p), foeRow = E.backRow(1 - p);
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
@@ -49,7 +49,7 @@
     const p = state.active;
     let best = { t: 'end' }, bestScore = evaluate(state, p) + 0.01;
     for (const a of E.legalActions(state)) {
-      if (a.t === 'end' || a.t === 'discardInf' || a.t === 'discardSquad') continue;
+      if (a.t === 'end' || a.t === 'swapInf') continue;       // the AI never swaps its infantry
       const s = E.clone(state);
       E.applyAction(s, a, true);
       const sc = evaluate(s, p);

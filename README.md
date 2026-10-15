@@ -8,13 +8,15 @@ Open `index.html` to play against the AI. `node test.js` runs rules tests and pl
 **Defence** units (▣ infantry and ♠ cards) can also be placed anywhere within 2 tiles of your king.
 
 ## Per turn
-1. **Infantry pop-up (3 cards):** for each card choose **deploy** (free, you then place it on the board), **recycle** (to the bottom of the infantry deck, once a turn) or **hold** it in your hand. Anything you leave is **discarded**.
-2. **Squad pop-up (2 cards):** **play** one now or **hold** it in your hand. The other is discarded.
-   Your **hand** holds up to 3 cards (squad cards and infantry together) and is always shown under the board. You may play **one card from your hand per turn**. Playing the squad card you were just offered doesn't use that up, and neither does deploying infantry. **A card you put into your hand this turn (held or drawn) can't be played until your next turn.**
-3. **Move up to 3 units**, one tile each (forward or sideways). Only units that were already on the board when your turn began can move; anything you place this turn is *new*. Rogues move 2 tiles. *Swift* units (Champion) don't use up one of the 3 moves.
-4. **Attack:** every unit may attack once per turn, for free.
+1. **Draw** 1 squad card. You start with 5 cards and hold up to 8 (a card drawn into a full hand goes to the bottom of the deck, so nothing is lost). The first player skips the draw on turn 1.
+2. **Mana** is 1 on your first turn, 2 on your second, and so on up to 10. Unspent mana doesn't carry over.
+3. **Play cards** from your hand: as many as your mana pays for (the number in the card's corner is its cost). Units go on the board, boosts take effect and go to the discard pile.
+4. **Free infantry:** one infantry card is dealt to you each turn. Place it straight away for free, or pay **1 mana once a turn to swap** it for the next one. An unplaced infantry goes to the bottom of its deck.
+5. **Move up to 3 units**, one tile each (forward or sideways). Only units that were already on the board when your turn began can move; anything you place this turn is *new*. Hidden rogues move 2 tiles in any direction. *Swift* units (Champion) don't use up one of the 3 moves.
+6. **Attack:** every unit may attack once per turn, for free.
 
-Anything left in your offers when you end the turn is discarded. When a deck runs out, its own discard pile is shuffled into a new deck. Running out is never a loss; the only win is destroying the enemy castle.
+**Where cards go:** new units appear on your back row. Defence units (▣ and ♠ cards) may also go anywhere within 2 tiles of your king, and archers may go into a friendly Siege Tower. If every usual tile for a card is full, it may use any empty tile on your first two rows.
+When a deck runs out, its own discard pile is shuffled into a new deck. Running out is never a loss; the only win is destroying the enemy castle.
 
 ## Armour, walls and counters
 - **Armour is a pool of plates.** A normal hit removes `ceil(attack / 2)` plates and leaves health alone. Once the plates are gone, hits go to health at full strength (no spill-over). **Breach** (♦ siege), poison and bombs ignore armour; boosts that deal damage do too.

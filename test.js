@@ -17,15 +17,16 @@ function checkInvariants(s) {
   }
   assert.strictEqual(kings, 2);
   for (const pl of s.players) {
-    assert(pl.hand.length <= E.HAND_MAX, 'hand over 3');
-    assert(pl.deploys >= 0 && pl.moves >= 0 && pl.handLeft >= 0);
+    assert(pl.hand.length <= E.HAND_MAX, 'hand over 8');
+    assert(pl.mana >= 0 && pl.mana <= pl.maxMana && pl.maxMana <= E.MAX_MANA, 'mana out of range');
+    assert(pl.moves >= 0);
   }
 }
 
 function play(seed, pick) {
   const s = E.newGame(seed);
   for (let step = 0; s.winner == null; step++) {
-    assert(step < 12000, 'game did not terminate (seed ' + seed + ')');
+    assert(step < 14000, 'game did not terminate (seed ' + seed + ')');
     E.applyAction(s, pick(s));
     checkInvariants(s);
   }
@@ -41,12 +42,13 @@ assert.strictEqual(new Set(E.DECK).size, 53);
 assert.strictEqual(E.INF_DECK.length, 38, '36 + 2 extra rogues');
 const cls = (c) => E.INF_DECK.filter((id) => E.CARDS[id].cls === c).length;
 assert.deepStrictEqual([cls('melee'), cls('ranged'), cls('defence'), cls('rogue')], [10, 10, 10, 8]);
-for (const id of E.INF_DECK) { const c = E.CARDS[id]; if (c.cls === 'melee') assert.deepStrictEqual([c.atk, c.armor], [2, 1]); if (c.cls === 'ranged') assert.deepStrictEqual([c.atk, c.armor], [1, 1]); if (c.cls === 'defence') assert.deepStrictEqual([c.atk, c.armor], [0, 3]); if (c.cls === 'rogue') assert.deepStrictEqual([c.atk, c.armor], [1, 2]); }
+for (const id of E.INF_DECK) { const c = E.CARDS[id]; assert.strictEqual(c.cost, 0, 'infantry are free'); if (c.cls === 'melee') assert.deepStrictEqual([c.atk, c.armor], [2, 1]); if (c.cls === 'ranged') assert.deepStrictEqual([c.atk, c.armor], [1, 1]); if (c.cls === 'defence') assert.deepStrictEqual([c.atk, c.armor], [0, 3]); if (c.cls === 'rogue') assert.deepStrictEqual([c.atk, c.armor], [1, 2]); }
+for (const id of E.DECK) assert(E.CARDS[id].cost >= 1 && E.CARDS[id].cost <= 8, 'squad cards cost 1-8 mana: ' + id);
 
 // --- helpers
 function fresh() {
   const s = E.newGame(1);
-  for (const pl of s.players) { pl.hand = []; pl.squadOffer = []; pl.deploys = 1; pl.moves = 3; pl.handLeft = 1; pl.recycles = 1; pl.fresh = 0; }
+  for (const pl of s.players) { pl.hand = []; pl.infHand = []; pl.mana = pl.maxMana = 10; pl.moves = 3; pl.swaps = 1; }
   s.log = [];
   return s;
 }
@@ -57,19 +59,91 @@ const put = (s, p, r, c, id) => {
 const acts = (s, t) => E.legalActions(s).filter((a) => a.t === t);
 const attack = (s, from, target, extra) => E.applyAction(s, Object.assign({ t: 'attack', from, target }, extra));
 const hits = (s) => acts(s, 'attack').map((a) => `${a.target.r},${a.target.c}`).sort();
+const endTurns = (s, n) => { for (let i = 0; i < n; i++) E.applyAction(s, { t: 'end' }); };
 
-// --- spawning and the turn structure
+// --- the hand and mana
 {
-  const s = fresh();
-  const nonDef = (st, p) => acts(st, 'deploy').filter((a) => E.CARDS[st.players[p].infOffer[a.pick]].reach !== 'defence' && E.CARDS[st.players[p].infOffer[a.pick]].reach !== 'range');
-  assert(nonDef(s, 0).every((a) => a.cell.r === 0), 'p0 spawns on row 0');
-  E.applyAction(s, { t: 'end' });
-  assert(nonDef(s, 1).every((a) => a.cell.r === E.ROWS - 1), 'p1 spawns on its own back row');
+  const s = E.newGame(7);
+  assert.deepStrictEqual(s.players.map((p) => p.hand.length), [5, 5], 'both players start with 5 cards');
+  assert.deepStrictEqual([s.players[0].mana, s.players[0].maxMana], [1, 1], 'mana is 1 on your first turn');
+  assert.strictEqual(s.players[0].infHand.length, 1, 'a free infantry is dealt each turn');
+  endTurns(s, 1);
+  assert.strictEqual(s.players[1].hand.length, 6, 'the second player draws on their first turn');
+  assert.strictEqual(s.players[1].mana, 1);
+  endTurns(s, 1);
+  assert.deepStrictEqual([s.players[0].hand.length, s.players[0].mana], [6, 2], 'player 1 draws from turn 2 on, and has 2 mana');
+  for (let i = 0; i < 40; i++) endTurns(s, 1);
+  assert(s.players.every((p) => p.maxMana === 10), 'mana stops at 10');
+  assert(s.players.every((p) => p.hand.length <= 8), 'hand stops at 8');
 }
-{ // one deploy per turn; up to 3 moves, one step per unit, never backward for ordinary units
+{ // a full hand sends the drawn card to the bottom of the deck
   const s = fresh();
+  s.players[0].hand = ['SA', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8'];
+  s.players[0].deck = ['H2', 'HA'];
+  const before = s.players[0].deck.length;
+  endTurns(s, 2);                                      // back to player 0, who draws
+  assert.strictEqual(s.players[0].hand.length, 8);
+  assert.strictEqual(s.players[0].deck[0], 'HA', 'the card that did not fit went to the bottom');
+  assert.strictEqual(s.players[0].deck.length, before);
+}
+{ // cards cost mana; any number can be played in a turn; boosts go to the discard pile
+  const s = fresh();
+  s.players[0].maxMana = s.players[0].mana = 5;
+  s.players[0].hand = ['SA', 'CA', 'S5', 'H10'];       // costs 1, 1, 5, 2
+  const playable = () => acts(s, 'play').map((a) => s.players[0].hand[a.hand]);
+  assert(playable().includes('S5'), 'a 5-cost card is affordable with 5 mana');
+  E.applyAction(s, acts(s, 'play').find((a) => s.players[0].hand[a.hand] === 'SA'));
+  E.applyAction(s, acts(s, 'play').find((a) => s.players[0].hand[a.hand] === 'CA'));
+  assert.strictEqual(s.players[0].mana, 3, 'costs are paid');
+  assert(!playable().includes('S5'), 'a 5-cost card is no longer affordable with 3 mana');
+  E.applyAction(s, acts(s, 'play').find((a) => s.players[0].hand[a.hand] === 'H10'));
+  assert.strictEqual(s.players[0].mana, 1);
+  assert.deepStrictEqual(s.players[0].squadDiscard, ['CA', 'H10'], 'boosts go to the discard pile');
+  assert.strictEqual(s.board[0].filter((u) => u && u.id === 'SA').length, 1, 'units go to the board');
+}
+{ // the free infantry: place it anywhere legal, or pay 1 mana (once a turn) to swap it; an unplaced one goes to the bottom
+  const s = fresh();
+  s.players[0].infHand = ['iSword'];
+  const m0 = s.players[0].mana;
   E.applyAction(s, acts(s, 'deploy')[0]);
-  assert.strictEqual(acts(s, 'deploy').length, 0, 'one infantry per turn');
+  assert.strictEqual(s.players[0].mana, m0, 'infantry are free');
+  assert.strictEqual(s.players[0].infHand.length, 0);
+  const t = fresh();
+  t.players[0].infHand = ['iSword']; t.players[0].infDeck = ['iArcher', 'iGuard'];
+  E.applyAction(t, acts(t, 'swapInf')[0]);
+  assert.strictEqual(t.players[0].mana, 9, 'a swap costs 1 mana');
+  assert.deepStrictEqual(t.players[0].infHand, ['iGuard'], 'a new infantry is dealt');
+  assert.strictEqual(t.players[0].infDeck[0], 'iSword', 'the old one goes to the bottom');
+  assert.strictEqual(acts(t, 'swapInf').length, 0, 'one swap per turn');
+  const u = fresh();
+  u.players[0].infHand = ['iSword']; u.players[0].infDeck = ['iArcher'];
+  endTurns(u, 1);
+  assert.strictEqual(u.players[0].infDeck[0], 'iSword', 'an unplaced infantry goes to the bottom of the deck');
+  const r = fresh();
+  r.players[0].hand = ['C7'];
+  E.applyAction(r, acts(r, 'play')[0]);
+  assert.strictEqual(r.players[0].infHand.length, 1, 'Reinforcements deals an extra infantry');
+}
+{ // new cards appear on your own back row; defence units may also go around the king; overflow when the usual tiles are full
+  const s = fresh();
+  s.players[0].infHand = ['iSword'];
+  assert(acts(s, 'deploy').every((a) => a.cell.r === 0), 'melee infantry go on the back row');
+  s.players[0].infHand = ['iShield'];
+  assert(acts(s, 'deploy').some((a) => a.cell.r > 0), 'defence infantry may go in front of the king');
+  s.players[0].hand = ['S4', 'D4'];
+  const fort = acts(s, 'play').filter((a) => a.hand === 0).map((a) => `${a.cell.r},${a.cell.c}`);
+  assert(fort.includes('1,3') && fort.includes('2,2') && fort.includes('0,1') && !fort.includes('3,3'));
+  assert(acts(s, 'play').filter((a) => a.hand === 1).every((a) => a.cell.r === 0));
+  const o = fresh();
+  for (let c = 0; c < E.COLS; c++) if (c !== E.KING_C) put(o, 0, 0, c, 'iSpear');
+  o.players[0].infHand = ['iSword'];
+  const cells = acts(o, 'deploy').map((a) => a.cell);
+  assert(cells.length > 0 && cells.every((c) => c.r === 1), 'overflow: with the back row full, the next row is allowed');
+  const p1 = E.newGame(3); endTurns(p1, 1);
+  assert(acts(p1, 'deploy').every((a) => a.cell.r === E.ROWS - 1 || E.CARDS[p1.players[1].infHand[a.pick]].reach === 'defence'), 'player 1 spawns on its own back row');
+}
+{ // moves: up to 3, one step each, never backward for ordinary units; new units can't move
+  const s = fresh();
   for (let c = 0; c < 4; c++) put(s, 0, 2, c, 'iSword');
   const mv = acts(s, 'move');
   assert(mv.length > 0 && mv.every((m) => m.cell.r >= m.from.r), 'no backward moves');
@@ -78,81 +152,25 @@ const hits = (s) => acts(s, 'attack').map((a) => `${a.target.r},${a.target.c}`).
   E.applyAction(s, acts(s, 'move').find((m) => m.from.c === 1));
   E.applyAction(s, acts(s, 'move').find((m) => m.from.c === 2));
   assert.strictEqual(acts(s, 'move').length, 0, 'three moves used up');
+  const n = fresh();
+  n.players[0].infHand = ['iSword'];
+  E.applyAction(n, acts(n, 'deploy')[0]);
+  assert.strictEqual(acts(n, 'move').length, 0, 'freshly placed units cannot move');
+  endTurns(n, 2);
+  assert(acts(n, 'move').length > 0, 'but can on your next turn');
 }
-{ // units placed this turn cannot move; they can next turn
-  const s = fresh();
-  E.applyAction(s, acts(s, 'deploy')[0]);
-  assert.strictEqual(acts(s, 'move').length, 0, 'freshly deployed infantry cannot move');
-  s.players[0].hand = ['C8'];
-  E.applyAction(s, { t: 'play', hand: 0 });
-  assert.strictEqual(acts(s, 'move').length, 0, 'conscripted units cannot move either');
-  E.applyAction(s, { t: 'end' }); E.applyAction(s, { t: 'end' });
-  assert(acts(s, 'move').length > 0, 'they can move on your next turn');
-}
-
-// --- squad offer, holding, hand rules
-{
-  const s = fresh();
-  s.players[0].squadOffer = ['DA', 'D2']; s.players[0].hand = ['SA', 'S2']; s.players[0].fresh = 0;
-  assert.strictEqual(acts(s, 'hold').length, 2, 'either offered card can be held');
-  E.applyAction(s, acts(s, 'hold').find((a) => a.pick === 0));
-  assert.deepStrictEqual(s.players[0].hand, ['SA', 'S2', 'DA']);
-  assert.deepStrictEqual(s.players[0].squadOffer, [], 'the other offered card is discarded');
-  assert.deepStrictEqual(s.players[0].squadDiscard, ['D2']);
-  s.players[0].squadOffer = ['D3'];
-  assert.strictEqual(acts(s, 'hold').length, 0, 'hand is full');
-  E.applyAction(s, acts(s, 'play').find((a) => a.hand === -1));
-  assert(acts(s, 'play').some((a) => a.hand >= 0), 'playing the offered card does not use up the hand play');
-  E.applyAction(s, acts(s, 'play').find((a) => a.hand >= 0));
-  assert.strictEqual(acts(s, 'play').length, 0, 'but only one card from hand per turn');
-  const s2 = fresh();
-  s2.players[0].squadOffer = ['DA', 'D2'];
-  E.applyAction(s2, acts(s2, 'play').find((a) => a.hand === -2));
-  assert.strictEqual(s2.board[0].filter((u) => u && u.id === 'D2').length, 1);
-  assert.deepStrictEqual(s2.players[0].squadDiscard, ['DA'], 'first offered card discarded');
-}
-{ // infantry can be held in hand; a card put in your hand this turn can't be played until next turn
-  const s = E.newGame(5);
-  const pl = s.players[0], offer = pl.infOffer.slice();
-  E.applyAction(s, E.legalActions(s).find((a) => a.t === 'holdInf' && a.pick === 2));
-  assert.deepStrictEqual(pl.hand, [offer[2]]);
-  assert(!E.legalActions(s).some((a) => a.t === 'play' && a.hand >= 0), 'a card held this turn cannot be played this turn');
-  E.applyAction(s, E.legalActions(s).find((a) => a.t === 'holdInf' && a.pick === 0));
-  pl.hand.push('S2');
-  assert(!E.legalActions(s).some((a) => a.t === 'holdInf'), 'a full hand cannot hold more infantry');
-  E.applyAction(s, { t: 'end' }); E.applyAction(s, { t: 'end' });
-  const plays = E.legalActions(s).filter((a) => a.t === 'play' && a.hand === 0);
-  assert(plays.length > 0, 'held infantry can be played from hand on a later turn');
-  const dep = pl.deploys;
-  E.applyAction(s, plays[0]);
-  assert.strictEqual(pl.deploys, dep, 'playing it from hand does not use the deploy');
-  assert(!E.legalActions(s).some((a) => a.t === 'play' && a.hand >= 0), 'one hand play per turn');
-}
-{ // infantry offer: 3 cards, deploy one, recycle one to the bottom, discard the last
-  const s = E.newGame(5);
-  const pl = s.players[0], offer = pl.infOffer.slice(), before = pl.infDeck.length;
-  assert.strictEqual(offer.length, 3);
-  E.applyAction(s, E.legalActions(s).find((a) => a.t === 'deploy' && a.pick === 1));
-  assert(s.board.flat().some((u) => u && u.id === offer[1]), 'picked card deployed');
-  const rec = E.legalActions(s).filter((a) => a.t === 'recycle');
-  assert.strictEqual(rec.length, 2);
-  const keep = pl.infOffer[0];
-  E.applyAction(s, rec[0]);
-  assert.strictEqual(pl.infDeck[0], keep, 'recycled card is at the bottom of the deck');
-  assert.strictEqual(pl.infDeck.length, before + 1);
-  E.applyAction(s, { t: 'end' });
-  assert.strictEqual(pl.infDiscard.length, 1, 'the third card is discarded');
-}
-{ // an empty deck is rebuilt from its own discard pile; running out is never a loss
+{ // an empty squad deck is rebuilt from its own discard pile; running out is never a loss
   const s = fresh();
   s.players[1].deck = []; s.players[1].squadDiscard = ['DA', 'D2', 'D3'];
-  s.players[1].infDeck = []; s.players[1].infDiscard = ['iSword', 'iBrute', 'iSpear', 'iArcher'];
-  E.applyAction(s, { t: 'end' });
+  s.players[1].infDeck = []; s.players[1].infDiscard = ['iSword', 'iBrute'];
+  endTurns(s, 1);
   assert.strictEqual(s.winner, null);
-  assert.strictEqual(s.players[1].squadOffer.length, 2); assert.strictEqual(s.players[1].infOffer.length, 3);
+  assert.strictEqual(s.players[1].hand.length, 1, 'drew from the rebuilt deck');
+  assert.strictEqual(s.players[1].deck.length, 2);
+  assert.strictEqual(s.players[1].infHand.length, 1);
   const s2 = fresh();
   s2.players[1].deck = []; s2.players[1].squadDiscard = []; s2.players[1].infDeck = []; s2.players[1].infDiscard = [];
-  E.applyAction(s2, { t: 'end' });
+  endTurns(s2, 1);
   assert.strictEqual(s2.winner, null, 'even with nothing left, the game goes on');
 }
 
@@ -363,18 +381,18 @@ const hits = (s) => acts(s, 'attack').map((a) => `${a.target.r},${a.target.c}`).
   E.applyAction(s, { t: 'end' });
   assert(s.board[1][3] && s.board[1][3].id === 'iArcher', 'the archer drops out onto the tower\'s tile');
   const d = fresh();
-  d.players[0].hand = ['iArcher']; d.players[0].fresh = 0;
+  d.players[0].infHand = ['iArcher'];
   put(d, 0, 1, 3, 'DT');
-  const into2 = acts(d, 'play').filter((a) => a.hand === 0 && a.cell.r === 1 && a.cell.c === 3);
+  const into2 = acts(d, 'deploy').filter((a) => a.cell.r === 1 && a.cell.c === 3);
   assert(into2.length === 1, 'an archer card can be placed straight into the tower');
   E.applyAction(d, into2[0]);
   assert.strictEqual(d.board[1][3].garrison.id, 'iArcher');
-  const n = fresh(); n.players[0].hand = ['iSword']; n.players[0].fresh = 0; put(n, 0, 1, 3, 'DT');
-  assert(!acts(n, 'play').some((a) => a.cell && a.cell.r === 1 && a.cell.c === 3), 'only archers go in towers');
+  const n = fresh(); n.players[0].infHand = ['iSword']; put(n, 0, 1, 3, 'DT');
+  assert(!acts(n, 'deploy').some((a) => a.cell.r === 1 && a.cell.c === 3), 'only archers go in towers');
 }
 
 // --- boosts, zones
-{ // Rally buffs infantry only; Conscription deploys 3 now; Reinforcements is a second infantry offer
+{ // Rally buffs infantry only; Conscription deploys 3 now
   const s = fresh();
   put(s, 0, 0, 2, 'iSword'); put(s, 0, 0, 5, 'S3');
   s.players[0].hand = ['CA'];
@@ -384,19 +402,15 @@ const hits = (s) => acts(s, 'attack').map((a) => `${a.target.r},${a.target.c}`).
   s2.players[0].hand = ['C8'];
   E.applyAction(s2, { t: 'play', hand: 0 });
   assert.strictEqual(s2.board[0].filter((u) => u && !E.isKing(u)).length, 3);
-  const s3 = E.newGame(9), pl = s3.players[0], before = pl.infOffer.length;
-  pl.hand = ['C7']; pl.fresh = 0;
-  E.applyAction(s3, { t: 'play', hand: 0 });
-  assert.strictEqual(pl.infOffer.length, before + 3); assert.strictEqual(pl.deploys, 2); assert.strictEqual(pl.recycles, 2);
 }
 { // armour boosts raise the plate pool; Reinforce restores it
   const s = fresh();
   const w = put(s, 0, 1, 3, 'S2');
-  s.players[0].hand = ['S7']; s.players[0].fresh = 0;
+  s.players[0].hand = ['S7'];
   E.applyAction(s, acts(s, 'play').find((a) => a.target.r === 1));
   assert.deepStrictEqual([w.armor, w.maxArmor, w.hp], [3, 3, 8]);
   w.armor = 0; w.hp = 1;
-  s.players[0].hand = ['S9']; s.players[0].fresh = 0; s.players[0].handLeft = 1;
+  s.players[0].hand = ['S9'];
   E.applyAction(s, { t: 'play', hand: 0 });
   assert.deepStrictEqual([w.armor, w.hp], [3, 8]);
 }
@@ -412,18 +426,6 @@ const hits = (s) => acts(s, 'attack').map((a) => `${a.target.r},${a.target.c}`).
   put(s2, 1, 6, 3, 'iSword'); put(s2, 1, 4, 5, 'iSword'); put(s2, 0, 1, 3, 'iSpear');
   s2.players[0].hand = ['H9'];
   assert.strictEqual(acts(s2, 'play').length, 0);
-}
-{ // defence units may be placed anywhere around the king; others only on the back row
-  const s = fresh();
-  s.players[0].hand = ['S4', 'D4'];
-  const fort = acts(s, 'play').filter((a) => a.hand === 0).map((a) => `${a.cell.r},${a.cell.c}`);
-  assert(fort.includes('1,3') && fort.includes('2,2') && fort.includes('0,1'));
-  assert(!fort.includes('3,3') && !fort.includes('2,0'));
-  assert(acts(s, 'play').filter((a) => a.hand === 1).every((a) => a.cell.r === 0));
-  const s2 = E.newGame(5);
-  s2.players[0].infOffer = ['iShield', 'iSword', 'iArcher'];
-  const dep = (pick) => acts(s2, 'deploy').filter((a) => a.pick === pick).map((a) => a.cell.r);
-  assert(dep(0).some((r) => r > 0)); assert(dep(1).every((r) => r === 0) && dep(2).every((r) => r === 0));
 }
 { // reaching and killing the castle wins
   const s = fresh();

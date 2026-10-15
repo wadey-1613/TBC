@@ -3,15 +3,12 @@
  * A shared 7-wide x 8-deep battlefield. Player 0 starts on row 0 and marches toward row 7; player 1 the reverse.
  * Each player's king (the castle) sits in the middle of their back row. Win by killing the enemy king.
  *
- * Per turn:  you are offered 3 infantry: deploy 1 (free, appears on your back row), recycle 1 to the
- *            bottom of the infantry deck, and the third is discarded
- *            you are offered 2 squad cards: use 1 (play it, or hold it in your hand, max 3), the other is discarded
- *            infantry offers can also be HELD in your hand (shared hand of max 3)
- *            you may play 1 card from your hand per turn (a held squad card or a held infantry); playing the
- *            squad card you were offered this turn doesn't use that up. A card put into your hand this turn
- *            (held or drawn) can't be played until your next turn
- *            move up to 3 different units (one step each; hidden rogues two, any direction), but only units that were already on the
- *            board when your turn began; anything placed this turn is 'fresh' and can't move
+ * Per turn:  you start with 5 cards, draw 1 squad card each turn (the first player skips the draw on turn 1) and hold up to 8.
+ *            Mana is 1 on your first turn, 2 on your second, ... up to 10. Spend it to play any number of cards from your hand.
+ *            You are also dealt 1 free infantry each turn to place instantly (swap it for another once a turn for 1 mana);
+ *            an unplaced infantry goes to the bottom of its deck. A full hand sends new cards to the bottom of the deck.
+ *            move up to 3 different units (one step each; hidden rogues two, any direction), but only units that were already
+ *            on the board when your turn began; anything placed this turn is 'fresh' and can't move
  *            every unit may attack once (free). Rogues start hidden and have ONE trap or bomb (or a double-damage
  *            sneak attack); using any of them reveals the rogue for good, and it fights on as a plain melee unit
  *            a deck that runs out is rebuilt by shuffling its own discard pile; the only win is the enemy castle
@@ -19,7 +16,7 @@
 (function (root) {
   'use strict';
 
-  const ROWS = 8, COLS = 7, KING_C = 3, KING_HP = 30, HAND_MAX = 3, MOVES = 3, MAX_TURNS = 300;
+  const ROWS = 8, COLS = 7, KING_C = 3, KING_HP = 30, HAND_MAX = 8, START_HAND = 5, MAX_MANA = 10, MOVES = 3, MAX_TURNS = 300;
   const DEFENCE_ZONE = 2;
   const SYM = { S: '♠', C: '♣', D: '♦', H: '♥' };
   const SUIT_ROLE = { S: 'Defence', C: 'Offence', D: 'Siege', H: 'Long range' };
@@ -124,7 +121,7 @@
   spell('C', '4', 'Charge', 'A unit may attack again and gets +1 attack.', [{ op: 'rearm', to: 'target' }, { op: 'buff', atk: 1, hp: 0, to: 'target' }], { target: 'allyUnit' });
   spell('C', '5', 'Warhorn', 'All your units get +1/+1.', [{ op: 'buff', atk: 1, hp: 1, to: 'allyUnits' }]);
   spell('C', '6', 'Berserk', 'An infantry gets +3 attack.', [{ op: 'buff', atk: 3, hp: 0, to: 'target' }], { target: 'allyInf' });
-  spell('C', '7', 'Reinforcements', 'A second infantry offer: draw 3 more, deploy one, recycle one, discard one.', [{ op: 'infOffer' }]);
+  spell('C', '7', 'Reinforcements', 'Deal yourself 1 extra infantry to place right now.', [{ op: 'infExtra' }]);
   spell('C', '8', 'Conscription', 'Immediately deploy 3 infantry.', [{ op: 'summonInf', n: 3 }]);
   spell('C', '9', 'Battle Cry', 'All your units may attack again.', [{ op: 'rearm', to: 'allyUnits' }]);
   spell('C', '10', 'Drums of War', 'Your infantry get +2 attack.', [{ op: 'buff', atk: 2, hp: 0, to: 'allyInf' }]);
@@ -154,6 +151,14 @@
   }
 
   CARDS.KING = { id: 'KING', kind: 'king', name: 'King', reach: 'melee', atk: 0, hp: KING_HP, armor: 0, kw: [], text: 'Lose your king and you lose the game.' };
+  // mana costs (infantry are free)
+  const COSTS = {
+    DA: 2, D2: 3, D3: 3, D4: 4, D5: 4, D6: 5, D7: 5, D8: 6, D9: 7, D10: 8, DJ: 3, DQ: 3, DK: 4, DT: 5,
+    SA: 1, S2: 2, S3: 3, S4: 4, S5: 5, S6: 2, S7: 1, S8: 4, S9: 3, S10: 3, SJ: 3, SQ: 3, SK: 5,
+    CA: 1, C2: 1, C3: 2, C4: 2, C5: 3, C6: 2, C7: 3, C8: 4, C9: 4, C10: 4, CJ: 4, CQ: 3, CK: 5,
+    HA: 2, H2: 3, H3: 3, H4: 4, H5: 5, H6: 3, H7: 3, H8: 5, H9: 2, H10: 2, HJ: 4, HQ: 1, HK: 6,
+  };
+  for (const id of Object.keys(CARDS)) CARDS[id].cost = CARDS[id].inf ? 0 : (COSTS[id] || 0);
   const DECK = Object.keys(CARDS).filter((id) => !CARDS[id].inf && id !== 'KING');
 
   // ---------------------------------------------------------------- helpers
@@ -209,6 +214,10 @@
       for (let r = kr - DEFENCE_ZONE; r <= kr + DEFENCE_ZONE; r++) for (let c = KING_C - DEFENCE_ZONE; c <= KING_C + DEFENCE_ZONE; c++) {
         if (inBounds(r, c) && !state.board[r][c] && !ownTrapAt(state, p, r, c) && !out.some((t) => t.r === r && t.c === c)) out.push({ r, c });
       }
+    }
+    if (!out.length) {                                    // overflow: if every usual tile is full, any empty tile on your first two rows will do
+      const kr = backRow(p);
+      for (const r of [kr, kr + dirOf(p)]) for (let c = 0; c < COLS; c++) if (!state.board[r][c] && !ownTrapAt(state, p, r, c)) out.push({ r, c });
     }
     if (canGarrisonCard(id)) {
       for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
@@ -315,8 +324,9 @@
     for (let r = 0; r < ROWS; r++) state.board.push(new Array(COLS).fill(null));
     for (let p = 0; p < 2; p++) {
       state.board[backRow(p)][KING_C] = { uid: ++state.uid, id: 'KING', p, atk: 0, hp: KING_HP, maxHp: KING_HP, armor: 0, attacked: true, moved: true, fresh: false, trapped: true, maxArmor: 0, stealth: false, ammo: 0, garrison: null, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false };
-      state.players.push({ deploys: 0, moves: 0, handLeft: 0, fresh: 0, recycles: 0, infOfferId: 0, infOffer: [], squadOffer: [], deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [], infDiscard: [], squadDiscard: [] });
+      state.players.push({ mana: 0, maxMana: 0, turns: 0, moves: 0, swaps: 0, infHand: [], deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [], infDiscard: [], squadDiscard: [] });
     }
+    for (let p = 0; p < 2; p++) for (let i = 0; i < START_HAND; i++) drawToHand(state, p);
     startTurn(state);
     return state;
   }
@@ -331,23 +341,29 @@
     return pl[deckKey].length > 0;
   }
 
+  // draw one squad card; a full hand sends it to the bottom of the deck instead (nothing is lost)
   function drawToHand(state, p) {
     const pl = state.players[p];
     if (!refill(state, p, 'deck', 'squadDiscard')) return;
     const id = pl.deck.pop();
-    if (pl.hand.length >= HAND_MAX) { pl.squadDiscard.push(id); log(state, `Player ${p + 1}'s hand is full; ${CARDS[id].name} is discarded.`); }
-    else { pl.hand.push(id); pl.fresh++; }
+    if (pl.hand.length >= HAND_MAX) { pl.deck.unshift(id); log(state, `Player ${p + 1}'s hand is full; ${CARDS[id].name} goes to the bottom of the deck.`); }
+    else pl.hand.push(id);
+  }
+
+  // deal infantry cards to place this turn
+  function dealInfantry(state, p, n) {
+    const pl = state.players[p];
+    for (let k = 0; k < n && refill(state, p, 'infDeck', 'infDiscard'); k++) pl.infHand.push(pl.infDeck.pop());
   }
 
   function startTurn(state) {
     const p = state.active, pl = state.players[p];
-    pl.deploys = 1;
+    pl.turns++;
+    pl.maxMana = Math.min(MAX_MANA, pl.turns);
+    pl.mana = pl.maxMana;
     pl.moves = MOVES;
-    pl.handLeft = 1;
-    pl.fresh = 0;                // the last `fresh` cards in your hand arrived this turn and can't be played yet
-    pl.recycles = 1;
-    pl.infOfferId++;
-    log(state, `— Turn ${state.turn}: Player ${p + 1} —`);
+    pl.swaps = 1;
+    log(state, `— Turn ${state.turn}: Player ${p + 1} (mana ${pl.mana}) —`);
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       const u = state.board[r][c];
       if (!u || u.p !== p) continue;
@@ -357,18 +373,15 @@
       u.immobile = u.stuck > 0; if (u.stuck > 0) u.stuck--;
       u.disarmed = u.blind > 0; if (u.blind > 0) u.blind--;
     }
-    pl.infOffer = [];
-    while (pl.infOffer.length < 3 && refill(state, p, 'infDeck', 'infDiscard')) pl.infOffer.push(pl.infDeck.pop());
-    pl.squadOffer = [];
-    while (pl.squadOffer.length < 2 && refill(state, p, 'deck', 'squadDiscard')) pl.squadOffer.push(pl.deck.pop());
-    log(state, `Player ${p + 1} is offered ${pl.infOffer.length} infantry and ${pl.squadOffer.length ? pl.squadOffer.map((id) => CARDS[id].name).join(' / ') : 'no squad cards'}.`);
+    if (state.turn > 1) drawToHand(state, p);        // the very first player skips the draw on turn 1
+    pl.infHand = [];
+    dealInfantry(state, p, 1);
     cleanup(state);
   }
 
   function endTurn(state) {
     const pl = state.players[state.active];
-    if (pl.infOffer.length) { pl.infDiscard.push(...pl.infOffer); log(state, `${pl.infOffer.length} unused infantry discarded.`); pl.infOffer = []; }
-    if (pl.squadOffer.length) { pl.squadDiscard.push(...pl.squadOffer); log(state, `${pl.squadOffer.map((id) => CARDS[id].name).join(' / ')} discarded.`); pl.squadOffer = []; }
+    if (pl.infHand.length) { pl.infDeck.unshift(...pl.infHand); log(state, `Player ${state.active + 1}'s unplaced infantry goes to the bottom of its deck.`); pl.infHand = []; }
     state.active = 1 - state.active;
     state.turn++;
     if (state.turn > MAX_TURNS && state.winner == null) { state.winner = 2; state.reason = 'Stalemate: nobody took the castle.'; log(state, state.reason); return; }
@@ -459,11 +472,7 @@
         case 'draw': for (let k = 0; k < e.n; k++) drawToHand(state, ctx.p); break;
         case 'healKing': king.hp = Math.min(king.maxHp, king.hp + e.n); break;
         case 'kingArmor': king.armor += e.n; king.maxArmor += e.n; break;
-        case 'infOffer': {
-          for (let k = 0; k < 3 && refill(state, ctx.p, 'infDeck', 'infDiscard'); k++) pl.infOffer.push(pl.infDeck.pop());
-          pl.deploys += 1; pl.recycles += 1; pl.infOfferId++;
-          break;
-        }
+        case 'infExtra': dealInfantry(state, ctx.p, 1); break;
         case 'moves': pl.moves += e.n; break;
         case 'healAll': for (const x of allUnits(state, ctx.p)) { at(x).hp = at(x).maxHp; at(x).armor = at(x).maxArmor; } break;
         case 'summonInf': {
@@ -496,32 +505,27 @@
     if (state.winner != null) return [];
     const p = state.active, pl = state.players[p], acts = [];
 
-    if (pl.deploys > 0) pl.infOffer.forEach((id, pick) => { for (const cell of spawnTilesFor(state, p, id)) acts.push({ t: 'deploy', pick, cell }); });
-    if (pl.recycles > 0) pl.infOffer.forEach((id, pick) => acts.push({ t: 'recycle', pick }));
-    pl.infOffer.forEach((id, pick) => acts.push({ t: 'discardInf', pick }));
-    if (pl.hand.length < HAND_MAX) pl.infOffer.forEach((id, pick) => acts.push({ t: 'holdInf', pick }));
-    pl.squadOffer.forEach((id, pick) => acts.push({ t: 'discardSquad', pick }));
+    // free infantry dealt this turn: place it, or pay 1 mana to swap it for the next one
+    pl.infHand.forEach((id, pick) => { for (const cell of spawnTilesFor(state, p, id)) acts.push({ t: 'deploy', pick, cell }); });
+    if (pl.swaps > 0 && pl.mana >= 1) pl.infHand.forEach((id, pick) => acts.push({ t: 'swapInf', pick }));
 
-    {
-      const sources = pl.handLeft > 0 ? pl.hand.map((id, i) => ({ id, i })).filter((x) => x.i < pl.hand.length - pl.fresh) : [];
-      pl.squadOffer.forEach((id, k) => sources.push({ id, i: -1 - k }));
-      for (const { id, i } of sources) {
-        const c = CARDS[id];
-        const targets = c.target ? validTargets(state, p, c.target) : [];
-        const area = c.kind === 'spell' && (c.effects || []).find((e) => e.op === 'damage' && e.to !== 'target');
-        if (area && !resolveTargets(state, area, { p }).length) continue; // area strikes need something in reach
-        if (c.kind === 'spell') {
-          if (c.target) targets.forEach((target) => acts.push({ t: 'play', hand: i, target }));
-          else acts.push({ t: 'play', hand: i });
-        } else {
-          for (const cell of spawnTilesFor(state, p, id)) {
-            if (targets.length) targets.forEach((target) => acts.push({ t: 'play', hand: i, cell, target }));
-            else acts.push({ t: 'play', hand: i, cell });
-          }
+    // squad cards from your hand, as many as your mana allows
+    pl.hand.forEach((id, i) => {
+      const c = CARDS[id];
+      if (c.cost > pl.mana) return;
+      const targets = c.target ? validTargets(state, p, c.target) : [];
+      const area = c.kind === 'spell' && (c.effects || []).find((e) => e.op === 'damage' && e.to !== 'target');
+      if (area && !resolveTargets(state, area, { p }).length) return;      // area strikes need something in reach
+      if (c.kind === 'spell') {
+        if (c.target) targets.forEach((target) => acts.push({ t: 'play', hand: i, target }));
+        else acts.push({ t: 'play', hand: i });
+      } else {
+        for (const cell of spawnTilesFor(state, p, id)) {
+          if (targets.length) targets.forEach((target) => acts.push({ t: 'play', hand: i, cell, target }));
+          else acts.push({ t: 'play', hand: i, cell });
         }
       }
-    }
-    if (pl.hand.length < HAND_MAX) pl.squadOffer.forEach((id, pick) => acts.push({ t: 'hold', pick }));
+    });
 
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       const u = state.board[r][c];
@@ -564,46 +568,24 @@
     if (a.t === 'end') { endTurn(state); return state; }
 
     if (a.t === 'deploy') {
-      pl.deploys--;
-      const c = placeUnit(state, p, pl.infOffer.splice(a.pick, 1)[0], a.cell);
+      const c = placeUnit(state, p, pl.infHand.splice(a.pick, 1)[0], a.cell);
       log(state, `Player ${p + 1} deploys ${c.name}.`);
-    } else if (a.t === 'recycle') {
-      const id = pl.infOffer.splice(a.pick, 1)[0];
-      pl.infDeck.unshift(id); // bottom of the deck
-      pl.recycles--;
-      log(state, `Player ${p + 1} recycles ${CARDS[id].name} to the bottom of the infantry deck.`);
-    } else if (a.t === 'holdInf') {
-      const id = pl.infOffer.splice(a.pick, 1)[0];
-      pl.hand.push(id); pl.fresh++;
-      log(state, `Player ${p + 1} holds ${CARDS[id].name} in hand.`);
-    } else if (a.t === 'discardInf') {
-      const id = pl.infOffer.splice(a.pick, 1)[0];
-      pl.infDiscard.push(id);
-      log(state, `Player ${p + 1} discards ${CARDS[id].name}.`);
-    } else if (a.t === 'discardSquad') {
-      const id = pl.squadOffer.splice(a.pick, 1)[0];
-      pl.squadDiscard.push(id);
-      log(state, `Player ${p + 1} discards ${CARDS[id].name}.`);
-    } else if (a.t === 'hold') {
-      const id = pl.squadOffer[a.pick];
-      pl.squadDiscard.push(...pl.squadOffer.filter((x, k) => k !== a.pick));
-      pl.squadOffer = [];
-      pl.hand.push(id); pl.fresh++;
-      log(state, `Player ${p + 1} holds ${CARDS[id].name}.`);
+    } else if (a.t === 'swapInf') {
+      const id = pl.infHand.splice(a.pick, 1)[0];
+      pl.infDeck.unshift(id);
+      pl.mana -= 1; pl.swaps--;
+      dealInfantry(state, p, 1);
+      log(state, `Player ${p + 1} pays 1 mana to swap ${CARDS[id].name} for a new infantry.`);
     } else if (a.t === 'play') {
-      let id;
-      if (a.hand < 0) {
-        const k = -1 - a.hand;
-        id = pl.squadOffer[k];
-        pl.squadDiscard.push(...pl.squadOffer.filter((x, j) => j !== k));
-        pl.squadOffer = [];
-      } else { id = pl.hand[a.hand]; pl.hand.splice(a.hand, 1); pl.handLeft--; }
-      const c = CARDS[id];
+      const id = pl.hand[a.hand], c = CARDS[id];
+      pl.hand.splice(a.hand, 1);
+      pl.mana -= c.cost;
       if (c.kind === 'unit') {
         placeUnit(state, p, id, a.cell);
-        log(state, `Player ${p + 1} fields ${cardLabel(c)}.`);
+        log(state, `Player ${p + 1} fields ${cardLabel(c)} (${c.cost} mana).`);
       } else {
-        log(state, `Player ${p + 1} plays ${cardLabel(c)}.`);
+        pl.squadDiscard.push(id);
+        log(state, `Player ${p + 1} plays ${cardLabel(c)} (${c.cost} mana).`);
       }
       if (c.effects) runEffects(state, c.effects, { p, target: a.target });
     } else if (a.t === 'move') {
@@ -653,8 +635,8 @@
     return state;
   }
 
-  const VERSION = 'r12'; // bump whenever a rule or card changes: recorded games replay only on the version that recorded them
-  const api = { VERSION, ROWS, COLS, KING_C, KING_HP, HAND_MAX, MOVES, DEFENCE_ZONE, SYM, SUIT_ROLE, CLS_SYM, TRAPS, CARDS, DECK, INF_DECK, newGame, legalActions, applyAction, clone, hasKw, suitOf, isKing, isInf, sameRef, locEq, backRow, dirOf, kingOf, inRange, reachTiles, attackTargets, spawnTiles, spawnTilesFor, moveDests, trapAt, unitAt };
+  const VERSION = 'r13'; // bump whenever a rule or card changes: recorded games replay only on the version that recorded them
+  const api = { VERSION, ROWS, COLS, KING_C, KING_HP, HAND_MAX, START_HAND, MAX_MANA, MOVES, DEFENCE_ZONE, SYM, SUIT_ROLE, CLS_SYM, TRAPS, CARDS, DECK, INF_DECK, newGame, legalActions, applyAction, clone, hasKw, suitOf, isKing, isInf, sameRef, locEq, backRow, dirOf, kingOf, inRange, reachTiles, attackTargets, spawnTiles, spawnTilesFor, moveDests, trapAt, unitAt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TBC = api;
 })(typeof window !== 'undefined' ? window : globalThis);
