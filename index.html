@@ -70,7 +70,7 @@
   #handrow { display:flex; gap:12px; align-items:flex-start; }
   #handrow h4 { margin:0 0 4px; font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; }
   #infslot { width:112px; flex:none; display:flex; flex-direction:column; gap:4px; }
-  #infslot .card { width:100%; }
+  #infslot .card { width:100%; height:196px; } .card.inf .ty { display:none; } .card.inf .art { min-height:90px; }
   #handwrap { flex:1; min-width:0; }
   #hand { display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); gap:5px; }
   #hand .card { padding:4px 3px; } #hand .card .pill { font-size:11px; gap:1px; padding:1px 0; } #hand .card .nm { font-size:11px; } #hand .card .tx { font-size:9px; } #hand .card .tags { font-size:8px; } #hand .card .ty { font-size:8px; }
@@ -87,6 +87,7 @@
   .card .nm { text-align:center; font-weight:700; font-size:12px; line-height:1.1; }
   .card .ty { text-align:center; font-size:9px; color:var(--dim); text-transform:uppercase; }
   .card .tx { font-size:10px; flex:1; text-align:center; color:#cfd5e6; overflow:hidden; line-height:1.15; }
+  .card .art { flex:1; min-height:34px; border-radius:5px; background-size:cover; background-position:center top; border:1px solid #4a3a6a; }
   .card .tags { font-size:9px; color:var(--gold); text-align:center; text-transform:uppercase; }
   .card .pill { font-size:14px; padding:2px 2px; }
   .card.big { width:190px; height:252px; padding:8px 10px; gap:5px; }

@@ -3,6 +3,8 @@
   const E = window.TBC;
   const { CARDS, SYM, SUIT_ROLE, CLS_SYM, TRAPS, OUTPOSTS, LEGEND_LEVELS, ROWS, COLS, HAND_MAX, newGame, legalActions, applyAction, sameRef, locEq, isKing, AI } = E;
   const ME = 0;
+  // card art for the four infantry classes (the published page inlines these as data URIs)
+  const ART = window.TBC_ART || { melee: 'art/melee.jpg', ranged: 'art/ranged.jpg', defence: 'art/defence.jpg', rogue: 'art/rogue.jpg' };
   const $ = (id) => document.getElementById(id);
   let state = null, pending = null, legal = [], aiRunning = false, notice = '';
   let prevUnits = new Map(), changes = new Map(), deaths = new Map(), reachSet = new Set();
@@ -250,7 +252,8 @@
     const gar = u.garrison ? `<div class="gar" title="${CARDS[u.garrison.id].name} is inside: it shoots from here and can't be targeted. It drops out if the tower falls.">🏹 ${CARDS[u.garrison.id].name} ⚔${u.garrison.atk} ♥${u.garrison.hp}/${u.garrison.maxHp}</div>` : '';
     const num = (delta ? `<div class="float ${delta < 0 ? 'dmg' : 'heal'}">${delta > 0 ? '+' : ''}${delta}</div>` : '')
       + (ch.ar ? `<div class="float arm" ${delta ? 'style="top:36px"' : ''}>🛡${ch.ar > 0 ? '+' : ''}${ch.ar}</div>` : '');
-    return `<div ${attrs}><div class="${cls}" title="${title}"><span class="rk">${rk}</span>${tl ? `<span class="tl">${tl}</span>` : ''}<div class="nm">${k.name}</div>${gar}`
+    const bg = k.inf ? ` style="background-image:linear-gradient(rgba(20,24,34,.1),rgba(20,24,34,.78)),url(${ART[k.cls]});background-size:cover;background-position:center top"` : '';
+    return `<div ${attrs}><div class="${cls}"${bg} title="${title}"><span class="rk">${rk}</span>${tl ? `<span class="tl">${tl}</span>` : ''}<div class="nm">${k.name}</div>${gar}`
       + `<div class="hpbar"><i class="${barCls}" style="width:${Math.round(ratio * 100)}%"></i></div>${stats}</div>${num}${opHtml}</div>`;
   }
 
@@ -283,7 +286,7 @@
     const type = c.inf ? `${c.cls} infantry` : `${c.kind === 'spell' ? 'Boost' : 'Unit'} · ${SUIT_ROLE[c.suit]}`;
     const cost = c.inf ? '<div class="cost">FREE</div>' : `<div class="cost" title="Costs ${c.cost} mana">${c.cost}</div>`;
     return `<div class="${cls}" ${opts.attr || ''} title="${c.name}${c.text ? ': ' + c.text.replace(/"/g, '&quot;') : ''}">${cost}<div class="top ${red(c.suit) ? 'red' : ''}">${top}</div><div class="nm">${c.name}</div>
-      <div class="ty">${type}</div><div class="tags">${kwText(c)}</div><div class="tx">${c.text}</div>${c.kind === 'unit' ? statsHtml(id, null) : '<div class="stats"></div>'}</div>`;
+      <div class="ty">${type}</div><div class="tags">${kwText(c)}</div>${c.inf ? `<div class="art" style="background-image:url(${ART[c.cls]})"></div>` : `<div class="tx">${c.text}</div>`}${c.kind === 'unit' ? statsHtml(id, null) : '<div class="stats"></div>'}</div>`;
   }
 
   function handHtml() {
