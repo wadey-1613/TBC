@@ -52,11 +52,11 @@
   function fieldsMatch(a, pd) {
     return (pd.deploy === undefined || (a.t === 'deploy' && a.pick === pd.deploy)) &&
       (pd.hand === undefined || (a.t === 'play' && a.hand === pd.hand)) &&
-      (pd.from === undefined || (locEq(a.from, pd.from) && ((pd.mode === 'trap') === (a.t === 'trap')))) &&
+      (pd.from === undefined || (locEq(a.from, pd.from) && (pd.mode ? a.t === pd.mode : a.t !== 'trap' && a.t !== 'bomb'))) &&
       (pd.cell === undefined || locEq(a.cell, pd.cell)) &&
       (pd.target === undefined || sameRef(a.target, pd.target));
   }
-  const CHOICE = ['deploy', 'play', 'move', 'attack', 'trap'];
+  const CHOICE = ['deploy', 'play', 'move', 'attack', 'trap', 'bomb'];
   const remaining = () => legal.filter((a) => CHOICE.includes(a.t) && (!pending || fieldsMatch(a, pending)));
   const complete = (a, pd) => (a.cell === undefined || pd.cell !== undefined) && (a.target === undefined || pd.target !== undefined);
   const myTurn = () => state.active === ME && !aiRunning && state.winner == null;
@@ -173,21 +173,22 @@
   // ------------------------------------------------------------ rendering helpers
   const red = (suit) => suit === 'H' || suit === 'D';
   const REACH = { melee: 'melee · 8 around', range: 'range · 2nd & 3rd row ahead', defence: 'defence · front arc', none: 'cannot attack · moves 2' };
-  const kwText = (c) => (c.kind === 'spell' ? c.kw : [REACH[c.reach]].concat(c.kw)).join(' · ');
+  const reachLabel = (c) => (c.atk === 0 ? 'cannot attack' : REACH[c.reach]);
+  const kwText = (c) => (c.kind === 'spell' ? c.kw : [reachLabel(c)].concat(c.kw)).join(' · ');
 
   // attack / armour / health pills. `now` is the live unit (or null for a card)
   function statsHtml(id, now) {
     const c = CARDS[id];
-    const atk = now ? now.atk : c.atk, arm = now ? now.armor : c.armor, hp = now ? now.hp : c.hp, max = now ? now.maxHp : c.hp;
+    const atk = now ? now.atk : c.atk, arm = now ? now.armor : c.armor, hp = now ? now.hp : c.hp, max = now ? now.maxHp : c.hp, maxA = now ? now.maxArmor : c.armor;
     return `<div class="stats"><span class="pill a${atk > c.atk ? ' buffed' : ''}${atk === 0 ? ' zero' : ''}" title="Attack">⚔${atk}</span>`
-      + `<span class="pill ar${arm > c.armor ? ' buffed' : ''}${arm === 0 ? ' zero' : ''}" title="Armour: cuts every hit">🛡${arm}</span>`
+      + `<span class="pill ar${arm > c.armor ? ' buffed' : ''}${arm === 0 ? ' zero' : ''}${arm < maxA ? ' worn' : ''}" title="Armour plates: a normal hit removes half its strength (rounded up) from the plates before health is touched">🛡${arm}${now && maxA ? '/' + maxA : ''}</span>`
       + `<span class="pill h${hp < max ? ' hurt' : ''}" title="Health">♥${hp}${now ? '/' + max : ''}</span></div>`;
   }
 
   function barHtml(p) {
     const pl = state.players[p], k = E.kingOf(state, p);
     return `<b>${p === ME ? 'You' : 'Opponent'}</b><span>Castle <b>♥${k.hp}/${k.maxHp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span>Moves <b>${pl.moves}</b></span>`
-      + `<span title="Traps on the board (max ${E.MAX_TRAPS} each)">Traps <b>${state.traps.filter((t) => t.p === p).length}</b>/${E.MAX_TRAPS}</span><span>Squad deck <b>${pl.deck.length}</b>/${pl.squadDiscard.length}</span><span>Infantry <b>${pl.infDeck.length}</b>/${pl.infDiscard.length}</span>`
+      + `<span title="Traps this player has on the board">Traps <b>${state.traps.filter((t) => t.p === p).length}</b></span><span>Squad deck <b>${pl.deck.length}</b>/${pl.squadDiscard.length}</span><span>Infantry <b>${pl.infDeck.length}</b>/${pl.infDiscard.length}</span>`
       + `<span class="grow"></span>${p !== ME && aiThinking ? '<span class="think">💭 thinking<span class="dots"><i>.</i><i>.</i><i>.</i></span></span>' : state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
   }
 
@@ -210,20 +211,23 @@
       const trap = t ? `<div class="trap p${t.p}" title="${t.p === ME ? 'Your' : 'Enemy'} ${TRAPS[t.type].name}: ${TRAPS[t.type].text}">${TRAPS[t.type].sym}</div>` : '';
       return `<div ${attrs}>${trap}${ko ? '<div class="float dead">✖</div>' : ''}</div>`;
     }
-    const k = CARDS[u.id], delta = changes.get(u.uid) || 0;
+    const k = CARDS[u.id], ch = changes.get(u.uid) || { hp: 0, ar: 0 }, delta = ch.hp;
     const isTarget = pending !== null && pending.target === undefined && rem.some((a) => a.target && sameRef(a.target, ref));
     const ready = u.p === ME && !pending && myTurn() && legal.some((a) => a.from && locEq(a.from, ref));
     const sel = pending && pending.from && locEq(pending.from, ref);
-    const cls = ['unit', 'p' + u.p, k.inf ? 'I' : (k.suit || ''), isKing(u) ? 'king' : '', ready ? 'ready' : '', isTarget ? 'target' : '', sel ? 'selected' : '', u.attacked && !isKing(u) ? 'spent' : '', u.fresh ? 'fresh' : '', delta < 0 ? 'hit' : delta > 0 ? 'healed' : ''].join(' ');
+    const cls = ['unit', 'p' + u.p, k.inf ? 'I' : (k.suit || ''), isKing(u) ? 'king' : '', ready ? 'ready' : '', isTarget ? 'target' : '', sel ? 'selected' : '', u.attacked && !isKing(u) ? 'spent' : '', u.fresh ? 'fresh' : '', delta < 0 || ch.ar < 0 ? 'hit' : delta > 0 || ch.ar > 0 ? 'healed' : '', u.stealth ? 'hidden' : '', (u.fresh || u.stealth || u.ammo > 0 || statusText(u)) ? 'hastl' : ''].join(' ');
     const rk = isKing(u) ? '♔' : k.inf ? CLS_SYM[k.cls] : `${k.rank}${SYM[k.suit]}`;
-    const title = `${k.name}${k.inf ? ' — ' + k.cls + ' infantry' : k.suit ? ' — ' + SUIT_ROLE[k.suit] : ''} [${isKing(u) ? 'castle' : REACH[k.reach]}${k.kw.length ? ', ' + k.kw.join(', ') : ''}]${k.text ? ': ' + k.text : ''}`;
+    const title = `${k.name}${k.inf ? ' — ' + k.cls + ' infantry' : k.suit ? ' — ' + SUIT_ROLE[k.suit] : ''} [${isKing(u) ? 'castle' : reachLabel(k)}${k.kw.length ? ', ' + k.kw.join(', ') : ''}]${k.text ? ': ' + k.text : ''}`;
     const ratio = Math.max(0, u.hp / u.maxHp), barCls = ratio <= 0.34 ? 'low' : ratio <= 0.67 ? 'mid' : '';
     const stats = isKing(u)
-      ? `<div class="stats"><span class="pill h${u.hp < u.maxHp ? ' hurt' : ''}">♥${u.hp}/${u.maxHp}</span><span class="pill ar${u.armor ? '' : ' zero'}">🛡${u.armor}</span></div>`
+      ? `<div class="stats"><span class="pill h${u.hp < u.maxHp ? ' hurt' : ''}">♥${u.hp}/${u.maxHp}</span><span class="pill ar${u.armor ? '' : ' zero'}${u.armor < u.maxArmor ? ' worn' : ''}">🛡${u.armor}${u.maxArmor ? '/' + u.maxArmor : ''}</span></div>`
       : statsHtml(u.id, u);
-    const tl = [u.fresh ? 'NEW' : '', statusText(u)].filter(Boolean).join(' ');
-    const num = delta ? `<div class="float ${delta < 0 ? 'dmg' : 'heal'}">${delta > 0 ? '+' : ''}${delta}</div>` : '';
-    return `<div ${attrs}><div class="${cls}" title="${title}"><span class="rk">${rk}</span>${tl ? `<span class="tl">${tl}</span>` : ''}<div class="nm">${k.name}</div>`
+    const ammo = u.ammo > 0 ? (k.rogue === 'bomb' ? '💣' : TRAPS[k.trap].sym) : '';
+    const tl = [u.fresh ? 'NEW' : '', u.stealth ? 'HIDDEN' : '', ammo, statusText(u)].filter(Boolean).join(' ');
+    const gar = u.garrison ? `<div class="gar" title="${CARDS[u.garrison.id].name} is inside: it shoots from here and can't be targeted. It drops out if the tower falls.">🏹 ${CARDS[u.garrison.id].name} ⚔${u.garrison.atk} ♥${u.garrison.hp}/${u.garrison.maxHp}</div>` : '';
+    const num = (delta ? `<div class="float ${delta < 0 ? 'dmg' : 'heal'}">${delta > 0 ? '+' : ''}${delta}</div>` : '')
+      + (ch.ar ? `<div class="float arm" ${delta ? 'style="top:36px"' : ''}>🛡${ch.ar > 0 ? '+' : ''}${ch.ar}</div>` : '');
+    return `<div ${attrs}><div class="${cls}" title="${title}"><span class="rk">${rk}</span>${tl ? `<span class="tl">${tl}</span>` : ''}<div class="nm">${k.name}</div>${gar}`
       + `<div class="hpbar"><i class="${barCls}" style="width:${Math.round(ratio * 100)}%"></i></div>${stats}</div>${num}</div>`;
   }
 
@@ -231,10 +235,10 @@
   function trackChanges() {
     changes = new Map(); deaths = new Map();
     const cur = new Map();
-    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const u = state.board[r][c]; if (u) cur.set(u.uid, { hp: u.hp, r, c, king: isKing(u) }); }
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const u = state.board[r][c]; if (u) cur.set(u.uid, { hp: u.hp, ar: u.armor, r, c, king: isKing(u) }); }
     prevUnits.forEach((old, uid) => {
       const now = cur.get(uid);
-      if (now) { if (now.hp !== old.hp) changes.set(uid, now.hp - old.hp); }
+      if (now) { if (now.hp !== old.hp || now.ar !== old.ar) changes.set(uid, { hp: now.hp - old.hp, ar: now.ar - old.ar }); }
       else if (!old.king) deaths.set(old.r * COLS + old.c, true);
     });
     prevUnits = cur;
@@ -243,7 +247,7 @@
   function boardHtml() {
     const rem = pending ? remaining() : [];
     reachSet = new Set();
-    if (pending && pending.from && pending.mode !== 'trap') E.reachTiles(state, pending.from.r, pending.from.c).forEach((t) => reachSet.add(t.r * COLS + t.c));
+    if (pending && pending.from && !pending.mode) E.reachTiles(state, pending.from.r, pending.from.c).forEach((t) => reachSet.add(t.r * COLS + t.c));
     let html = '';
     for (let r = ROWS - 1; r >= 0; r--) for (let c = 0; c < COLS; c++) html += tileHtml(r, c, rem);
     return html;
@@ -350,6 +354,7 @@
       return needCell && pending.cell === undefined ? 'Choose a tile for it. Defence units can go within 2 tiles of your king.' : 'Choose a target.';
     }
     if (pending.mode === 'trap') return 'Choose an empty tile next to the rogue for the trap.';
+    if (pending.mode === 'bomb') return 'Choose a landing tile exactly 2 away. The blast hits that tile and every tile around it, friends too.';
     return 'The shaded tiles are this unit\'s reach. Click an enemy in reach (gold) to attack, or an empty tile to move.';
   }
 
@@ -366,8 +371,10 @@
     $('hint').textContent = hint();
     $('endBtn').disabled = !myTurn();
     const sel = pending && pending.from && state.board[pending.from.r][pending.from.c];
-    $('trapBtn').hidden = !(myTurn() && sel && legal.some((a) => a.t === 'trap' && locEq(a.from, pending.from)));
+    const has = (t) => !!(myTurn() && sel && legal.some((a) => a.t === t && locEq(a.from, pending.from)));
+    $('trapBtn').hidden = !has('trap'); $('bombBtn').hidden = !has('bomb');
     $('trapBtn').textContent = pending && pending.mode === 'trap' ? 'Cancel trap' : 'Lay trap';
+    $('bombBtn').textContent = pending && pending.mode === 'bomb' ? 'Cancel bomb' : 'Throw bomb';
     const placeable = myTurn() && infDone && pl.infOffer.length > 0 && canDeploy() && !pending;
     $('placeBtn').hidden = !placeable;
     if (placeable) $('placeBtn').textContent = 'Place ' + CARDS[pl.infOffer[0]].name;
@@ -409,7 +416,9 @@
   $('aiThink').onchange = () => { aiThinkMode = $('aiThink').value; try { localStorage.setItem('tbc-ai-think', aiThinkMode); } catch (e) { /* ignore */ } };
   $('skipBtn').onclick = () => { aiSkip = true; if (thinkResume) thinkResume(); };
   $('endBtn').onclick = () => { if (myTurn()) run({ t: 'end' }); };
-  $('trapBtn').onclick = () => { if (pending && pending.from) { pending = { from: pending.from, mode: pending.mode === 'trap' ? undefined : 'trap' }; render(); } };
+  const toggleMode = (mode) => { if (pending && pending.from) { pending = { from: pending.from, mode: pending.mode === mode ? undefined : mode }; render(); } };
+  $('trapBtn').onclick = () => toggleMode('trap');
+  $('bombBtn').onclick = () => toggleMode('bomb');
   $('placeBtn').onclick = () => { pending = { deploy: 0 }; render(); };
   $('offerBtn').onclick = () => { squadDone = false; squadForce = true; pending = null; render(); };
   const cancel = () => { pending = null; if (state) render(); };

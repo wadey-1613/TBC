@@ -10,16 +10,17 @@
  *            you may play 1 card from your hand per turn (a held squad card or a held infantry); playing the
  *            squad card you were offered this turn doesn't use that up. A card put into your hand this turn
  *            (held or drawn) can't be played until your next turn
- *            move up to 3 different units (one step each; rogues two), but only units that were already on the
+ *            move up to 3 different units (one step each; hidden rogues two, any direction), but only units that were already on the
  *            board when your turn began; anything placed this turn is 'fresh' and can't move
- *            every unit may attack once (free); rogues can't attack but lay one trap each
+ *            every unit may attack once (free). Rogues start hidden and have ONE trap or bomb (or a double-damage
+ *            sneak attack); using any of them reveals the rogue for good, and it fights on as a plain melee unit
  *            a deck that runs out is rebuilt by shuffling its own discard pile; the only win is the enemy castle
  */
 (function (root) {
   'use strict';
 
   const ROWS = 8, COLS = 7, KING_C = 3, KING_HP = 30, HAND_MAX = 3, MOVES = 3, MAX_TURNS = 300;
-  const DEFENCE_ZONE = 2, MAX_TRAPS = 5;
+  const DEFENCE_ZONE = 2;
   const SYM = { S: '♠', C: '♣', D: '♦', H: '♥' };
   const SUIT_ROLE = { S: 'Defence', C: 'Offence', D: 'Siege', H: 'Long range' };
   const CLS_SYM = { melee: '⚔', ranged: '➶', defence: '▣', rogue: '🗡' };
@@ -37,29 +38,43 @@
   //   melee   the 8 tiles around it
   //   range   the 2nd and 3rd rows ahead, 3 tiles wide (the row right in front is a blind spot)
   //   defence the 3 tiles in front, plus left and right (nothing behind)
-  //   none    rogues: they can't attack
   // Keywords:  breach  ignores armour and does double damage to ♠
   //            swift   its move doesn't use up one of your moves
   // A defender strikes back only if the attacker is adjacent AND inside the defender's own shape.
   // Targets: enemyUnit | enemyInf are enemies inside the reach of one of YOUR units. allyUnit | allyInf are yours.
   // Defence units (infantry and ♠) may be placed anywhere within DEFENCE_ZONE tiles of your king.
+  // ARMOUR is a pool of plates: a normal hit removes ceil(attack / 2) plates and doesn't touch health; once the plates
+  // are gone every hit goes to health at full strength (no spill-over). Breach, poison, bombs and boosts ignore armour.
+  // Defence-shape units (walls, towers, defence infantry) take DOUBLE damage from behind. Defence infantry counter-hit
+  // adjacent melee attackers in front or beside for floor(attack / 2) if they survive; walls and towers never counter.
+  // Rogues start hidden (can't be targeted). While hidden they may use their ONE trap or bomb, or sneak attack for double
+  // damage. Doing any of these reveals them for good and they fight on as plain melee units.
   const CARDS = {};
   const reg = (c) => { CARDS[c.id] = Object.assign({ kw: [], text: '', armor: 0, atk: 0, hp: 0 }, c); return CARDS[c.id]; };
 
-  // ---- infantry (free, small stats)
+  // ---- infantry (free, small stats). Stats: attack, health, armour plates.
   const INF = [
-    ['iSword', 'Swordsman', 'melee', 2, 2, 0, 5], ['iBrute', 'Brute', 'melee', 3, 1, 0, 3], ['iSpear', 'Spearman', 'melee', 1, 3, 0, 2],
-    ['iArcher', 'Archer', 'ranged', 2, 1, 0, 5], ['iSlinger', 'Slinger', 'ranged', 1, 2, 0, 5],
-    ['iShield', 'Shieldman', 'defence', 1, 3, 1, 5], ['iGuard', 'Guard', 'defence', 0, 4, 1, 3], ['iPike', 'Pikeman', 'defence', 2, 2, 1, 2],
+    ['iSword', 'Swordsman', 'melee', 2, 2, 1, 5], ['iBrute', 'Brute', 'melee', 2, 2, 1, 3], ['iSpear', 'Spearman', 'melee', 2, 2, 1, 2],
+    ['iArcher', 'Archer', 'ranged', 1, 2, 1, 5], ['iSlinger', 'Slinger', 'ranged', 1, 2, 1, 5],
+    ['iShield', 'Shieldman', 'defence', 0, 3, 3, 5], ['iGuard', 'Guard', 'defence', 0, 3, 3, 3], ['iPike', 'Pikeman', 'defence', 0, 3, 3, 2],
   ];
   const INF_DECK = [];
   for (const [id, name, cls, atk, hp, armor, n] of INF) {
-    reg({ id, name, kind: 'unit', inf: true, cls, atk, hp, armor, reach: cls === 'ranged' ? 'range' : cls === 'defence' ? 'defence' : 'melee' });
+    reg({
+      id, name, kind: 'unit', inf: true, cls, atk, hp, armor,
+      reach: cls === 'ranged' ? 'range' : cls === 'defence' ? 'defence' : 'melee',
+      kw: cls === 'defence' ? ['counter'] : [],
+      text: cls === 'defence' ? 'Cannot attack. Counters a melee hit from the front or sides for half its strength if it survives. Double damage from behind.' : '',
+    });
     for (let k = 0; k < n; k++) INF_DECK.push(id);
   }
-  // rogues: can't attack, move up to 2 tiles, lay one trap a turn
-  for (const [id, name, trap] of [['iPoisoner', 'Poisoner', 'poison'], ['iTrapper', 'Trapper', 'sticky'], ['iSaboteur', 'Saboteur', 'flash']]) {
-    reg({ id, name, kind: 'unit', inf: true, cls: 'rogue', atk: 0, hp: 2, armor: 0, reach: 'none', speed: 2, trap, text: `Moves 2. Lays a ${TRAPS[trap].name} each turn. Cannot attack.` });
+  // rogues: hidden until they act. ONE trap or bomb (or a double-damage sneak attack), then plain melee units
+  const ROGUES = [['iPoisoner', 'Poisoner', 'trap', 'poison'], ['iTrapper', 'Trapper', 'trap', 'sticky'], ['iSaboteur', 'Saboteur', 'trap', 'flash'], ['iBomber', 'Bomber', 'bomb', null]];
+  for (const [id, name, rogue, trap] of ROGUES) {
+    const what = rogue === 'bomb' ? 'one bomb (thrown exactly 2 tiles away: 1 damage to everything around the landing spot, friends too)' : `one ${TRAPS[trap].name}`;
+    const c = { id, name, kind: 'unit', inf: true, cls: 'rogue', atk: 1, hp: 2, armor: 2, reach: 'melee', rogue, kw: ['stealth'], text: `Hidden: can't be targeted. Moves 2 in any direction. Has ${what}, or a sneak attack for double damage. Acting reveals it for good.` };
+    if (trap) c.trap = trap;
+    reg(c);
     INF_DECK.push(id, id);
   }
 
@@ -84,20 +99,23 @@
   spell('D', 'Q', 'Battering Charge', 'Your Siege units may attack again and get +2 attack.', [{ op: 'rearm', to: 'allySuit', suit: 'D' }, { op: 'buff', atk: 2, hp: 0, to: 'allySuit', suit: 'D' }]);
   unit('D', 'K', 'Siege Master', 3, 6, 0, { kw: B, text: 'Play: your Siege units get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'allySuit', suit: 'D' }] });
 
-  // ♠ Defence — fortresses and defensive boosts
-  unit('S', 'A', 'Palisade', 0, 5, 1);
-  unit('S', '2', 'Stone Wall', 0, 7, 2);
-  unit('S', '3', 'Bulwark', 1, 9, 2);
-  unit('S', '4', 'Fortress', 2, 12, 3);
-  unit('S', '5', 'Citadel', 3, 16, 4);
+  // The Siege Tower is the 53rd card: a wall that holds one archer (see garrison rules in moveDests / placeUnit)
+  unit('D', 'T', 'Siege Tower', 0, 8, 3, { reach: 'defence', kw: ['wall', 'tower'], text: 'Holds 1 archer: it shoots from inside and can\'t be targeted. If the tower falls the archer drops out.' });
+
+  // ♠ Defence — walls (no attack, no counter, take double damage from behind) and defensive boosts
+  unit('S', 'A', 'Palisade', 0, 4, 1);
+  unit('S', '2', 'Stone Wall', 0, 5, 2);
+  unit('S', '3', 'Bulwark', 0, 6, 2);
+  unit('S', '4', 'Fortress', 0, 6, 3);
+  unit('S', '5', 'Citadel', 0, 6, 4);
   spell('S', '6', 'Field Hospital', 'Your king heals 6.', [{ op: 'healKing', n: 6 }]);
   spell('S', '7', 'Fortify', 'A unit gets +3 health and +1 armour.', [{ op: 'buff', atk: 0, hp: 3, armor: 1, to: 'target' }], { target: 'allyUnit' });
   spell('S', '8', 'Shield Wall', 'All your units get +1 armour.', [{ op: 'buff', atk: 0, hp: 0, armor: 1, to: 'allyUnits' }]);
-  spell('S', '9', 'Reinforce', 'Restore all your units to full health.', [{ op: 'healAll' }]);
+  spell('S', '9', 'Reinforce', 'Restore all your units to full health and armour.', [{ op: 'healAll' }]);
   spell('S', '10', 'Royal Guard', 'Your king gets +2 armour.', [{ op: 'kingArmor', n: 2 }]);
-  unit('S', 'J', 'Bodyguard', 2, 6, 2, { text: 'Play: your king heals 4.', effects: [{ op: 'healKing', n: 4 }] });
+  unit('S', 'J', 'Bodyguard', 0, 5, 2, { text: 'Play: your king heals 4.', effects: [{ op: 'healKing', n: 4 }] });
   spell('S', 'Q', 'Engineers', 'Your Defence units get +3 health.', [{ op: 'buff', atk: 0, hp: 3, to: 'allySuit', suit: 'S' }]);
-  unit('S', 'K', 'Warlord', 3, 10, 3, { text: 'Play: your king gets +1 armour.', effects: [{ op: 'kingArmor', n: 1 }] });
+  unit('S', 'K', 'Warlord', 0, 6, 3, { text: 'Play: your king gets +1 armour.', effects: [{ op: 'kingArmor', n: 1 }] });
 
   // ♣ Offence — boosts for your infantry and commanders
   spell('C', 'A', 'Rally', 'Your infantry get +1 attack.', [{ op: 'buff', atk: 1, hp: 0, to: 'allyInf' }]);
@@ -132,6 +150,7 @@
   for (const id of Object.keys(CARDS)) {
     const c = CARDS[id];
     if (!c.reach) c.reach = c.suit === 'S' ? 'defence' : c.suit === 'H' ? 'range' : 'melee';
+    if (c.suit === 'S' && c.kind === 'unit') c.kw = ['wall'].concat(c.kw);
   }
 
   CARDS.KING = { id: 'KING', kind: 'king', name: 'King', reach: 'melee', atk: 0, hp: KING_HP, armor: 0, kw: [], text: 'Lose your king and you lose the game.' };
@@ -191,6 +210,12 @@
         if (inBounds(r, c) && !state.board[r][c] && !ownTrapAt(state, p, r, c) && !out.some((t) => t.r === r && t.c === c)) out.push({ r, c });
       }
     }
+    if (canGarrisonCard(id)) {
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const t = state.board[r][c];
+        if (t && t.p === p && hasKw(t, 'tower') && !t.garrison) out.push({ r, c });
+      }
+    }
     return out;
   }
 
@@ -204,45 +229,66 @@
       default: return Math.max(Math.abs(dr), side) === 1;
     }
   }
-  // every tile of the board inside a unit's reach shape (for the UI)
+  // who shoots from a tile: an archer garrisoned in a tower, otherwise the unit itself
+  const shooterAt = (state, r, c) => { const u = state.board[r][c]; return u && u.garrison && u.garrison.atk > 0 ? u.garrison : u; };
+  // every tile of the board inside the reach shape of whoever attacks from tile (r, c) (for the UI)
   function reachTiles(state, r, c) {
-    const u = state.board[r][c], out = [];
-    for (let rr = 0; rr < ROWS; rr++) for (let cc = 0; cc < COLS; cc++) if (inRange(u, { r, c }, { r: rr, c: cc })) out.push({ r: rr, c: cc });
+    const s = shooterAt(state, r, c), out = [];
+    if (!s || s.atk <= 0) return out;
+    for (let rr = 0; rr < ROWS; rr++) for (let cc = 0; cc < COLS; cc++) if (inRange(s, { r, c }, { r: rr, c: cc })) out.push({ r: rr, c: cc });
     return out;
   }
 
-  function attackDamage(att, def) {
-    if (hasKw(att, 'breach')) return suitOf(def) === 'S' ? att.atk * 2 : att.atk;
-    return Math.max(0, att.atk - def.armor);
+  // One hit of strength `raw` on `def` (standing at defPos) from `att` at attPos (att is null for a counter-hit).
+  function strike(state, att, attPos, def, defPos, raw) {
+    let a = raw, behind = false;
+    if (CARDS[def.id].reach === 'defence' && attPos && (attPos.r - defPos.r) * dirOf(def.p) < 0) { behind = true; a *= 2; }
+    let toArmour = 0, toHp = 0;
+    if (att && hasKw(att, 'breach')) toHp = suitOf(def) === 'S' ? a * 2 : a;
+    else if (def.armor > 0) { toArmour = Math.min(def.armor, Math.ceil(a / 2)); def.armor -= toArmour; }
+    else toHp = a;
+    def.hp -= toHp;
+    return { a, behind, toArmour, toHp };
   }
+  const describeHit = (r) => (r.toArmour ? `${r.toArmour} armour` : `${r.toHp} damage`);
+
   const makeUnit = (state, p, id) => {
     const c = CARDS[id];
-    return { uid: ++state.uid, id, p, atk: c.atk, hp: c.hp, maxHp: c.hp, armor: c.armor, attacked: false, moved: false, fresh: true, trapped: false, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false };
+    return { uid: ++state.uid, id, p, atk: c.atk, hp: c.hp, maxHp: c.hp, armor: c.armor, maxArmor: c.armor, attacked: false, moved: false, fresh: true, trapped: false, stealth: !!c.rogue, ammo: c.rogue ? 1 : 0, garrison: null, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false };
   };
 
-  function attackTargets(state, r, c) {
-    const u = state.board[r][c], out = [];
+  // archers (ranged infantry) may be placed or moved into a friendly Siege Tower that has room
+  const canGarrisonCard = (id) => !!CARDS[id].inf && CARDS[id].reach === 'range';
+  const canGarrison = (u, tower) => tower.p === u.p && hasKw(tower, 'tower') && !tower.garrison && canGarrisonCard(u.id);
+
+  // hidden enemy rogues can't be targeted
+  function attackTargets(state, r, c, shooter) {
+    const u = shooter || state.board[r][c], out = [];
     for (let rr = Math.max(0, r - 3); rr <= Math.min(ROWS - 1, r + 3); rr++) {
       for (let cc = Math.max(0, c - 3); cc <= Math.min(COLS - 1, c + 3); cc++) {
         const t = state.board[rr][cc];
-        if (t && t.p !== u.p && inRange(u, { r, c }, { r: rr, c: cc })) out.push({ r: rr, c: cc });
+        if (t && t.p !== u.p && !t.stealth && inRange(u, { r, c }, { r: rr, c: cc })) out.push({ r: rr, c: cc });
       }
     }
     return out;
   }
 
-  // tiles a unit may move to this turn: forward, left or right (never back), up to its speed, through empty tiles.
-  // An enemy trap stops the unit on it; your own traps can't be entered.
+  // tiles a unit may move to this turn through empty tiles. Normal units: forward, left or right, one step.
+  // Hidden rogues: up to 2 steps in ANY direction. An enemy trap stops the unit on it; your own traps can't be entered.
+  // Archers may step into a friendly Siege Tower with room.
   function moveDests(state, r, c) {
-    const u = state.board[r][c], dir = dirOf(u.p), speed = CARDS[u.id].speed || 1;
+    const u = state.board[r][c], dir = dirOf(u.p), sneaky = !!CARDS[u.id].rogue && u.stealth;
+    const dirs = sneaky ? [[1, 0], [-1, 0], [0, -1], [0, 1]] : [[dir, 0], [0, -1], [0, 1]], speed = sneaky ? 2 : 1;
     const out = [], seen = new Set([r * COLS + c]);
     let frontier = [{ r, c }];
     for (let step = 0; step < speed; step++) {
       const next = [];
       for (const t of frontier) {
-        for (const [dr, dc] of [[dir, 0], [0, -1], [0, 1]]) {
+        for (const [dr, dc] of dirs) {
           const nr = t.r + dr, nc = t.c + dc;
-          if (!inBounds(nr, nc) || state.board[nr][nc] || seen.has(nr * COLS + nc) || ownTrapAt(state, u.p, nr, nc)) continue;
+          if (!inBounds(nr, nc) || seen.has(nr * COLS + nc) || ownTrapAt(state, u.p, nr, nc)) continue;
+          const occ = state.board[nr][nc];
+          if (occ) { if (canGarrison(u, occ)) { seen.add(nr * COLS + nc); out.push({ r: nr, c: nc }); } continue; }
           seen.add(nr * COLS + nc);
           out.push({ r: nr, c: nc });
           if (!trapAt(state, nr, nc)) next.push({ r: nr, c: nc });
@@ -253,12 +299,22 @@
     return out;
   }
 
+  // a bomb: 1 damage (ignoring armour) to everything on and around the landing tile, friends included. Hidden rogues are missed.
+  function explode(state, cell) {
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const r = cell.r + dr, c = cell.c + dc;
+      if (!inBounds(r, c)) continue;
+      const u = state.board[r][c];
+      if (u && !u.stealth) { u.hp -= 1; log(state, `${CARDS[u.id].name} is caught in the blast.`); }
+    }
+  }
+
   // ---------------------------------------------------------------- setup / flow
   function newGame(seed) {
     const state = { rng: seed | 0, turn: 1, active: 0, winner: null, reason: '', uid: 0, log: [], board: [], traps: [], players: [] };
     for (let r = 0; r < ROWS; r++) state.board.push(new Array(COLS).fill(null));
     for (let p = 0; p < 2; p++) {
-      state.board[backRow(p)][KING_C] = { uid: ++state.uid, id: 'KING', p, atk: 0, hp: KING_HP, maxHp: KING_HP, armor: 0, attacked: true, moved: true, fresh: false, trapped: true, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false };
+      state.board[backRow(p)][KING_C] = { uid: ++state.uid, id: 'KING', p, atk: 0, hp: KING_HP, maxHp: KING_HP, armor: 0, attacked: true, moved: true, fresh: false, trapped: true, maxArmor: 0, stealth: false, ammo: 0, garrison: null, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false };
       state.players.push({ deploys: 0, moves: 0, handLeft: 0, fresh: 0, recycles: 0, infOfferId: 0, infOffer: [], squadOffer: [], deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [], infDiscard: [], squadDiscard: [] });
     }
     startTurn(state);
@@ -296,6 +352,7 @@
       const u = state.board[r][c];
       if (!u || u.p !== p) continue;
       u.attacked = false; u.moved = false; u.fresh = false; u.trapped = false;
+      if (u.garrison) { u.garrison.attacked = false; u.garrison.fresh = false; }
       if (u.poison > 0) { u.hp -= 1; u.poison--; log(state, `${CARDS[u.id].name} takes 1 poison damage.`); }
       u.immobile = u.stuck > 0; if (u.stuck > 0) u.stuck--;
       u.disarmed = u.blind > 0; if (u.blind > 0) u.blind--;
@@ -321,7 +378,11 @@
   function cleanup(state) {
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       const u = state.board[r][c];
-      if (u && u.hp <= 0 && !isKing(u)) { state.board[r][c] = null; log(state, `${CARDS[u.id].name} is destroyed.`); }
+      if (u && u.hp <= 0 && !isKing(u)) {
+        log(state, `${CARDS[u.id].name} is destroyed.`);
+        if (u.garrison) { state.board[r][c] = u.garrison; log(state, `${CARDS[u.garrison.id].name} drops out of the wreckage.`); }
+        else state.board[r][c] = null;
+      }
     }
     if (state.winner == null) {
       const k0 = kingOf(state, 0).hp <= 0, k1 = kingOf(state, 1).hp <= 0;
@@ -345,8 +406,6 @@
 
   function layTrap(state, p, cell, type) {
     state.traps.push({ p, r: cell.r, c: cell.c, type });
-    const mine = state.traps.filter((t) => t.p === p);
-    if (mine.length > MAX_TRAPS) state.traps.splice(state.traps.indexOf(mine[0]), 1); // the oldest one is lost
   }
 
   // ---------------------------------------------------------------- effects
@@ -354,10 +413,13 @@
     const seen = new Set(), out = [];
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       const u = state.board[r][c];
-      if (!u || u.p !== p || isKing(u) || u.atk <= 0) continue;
-      for (const t of attackTargets(state, r, c)) {
-        const e = state.board[t.r][t.c], key = t.r * COLS + t.c;
-        if (!isKing(e) && !seen.has(key)) { seen.add(key); out.push(t); }
+      if (!u || u.p !== p || isKing(u)) continue;
+      for (const s of [u, u.garrison]) {
+        if (!s || s.atk <= 0) continue;
+        for (const t of attackTargets(state, r, c, s)) {
+          const e = state.board[t.r][t.c], key = t.r * COLS + t.c;
+          if (!isKing(e) && !seen.has(key)) { seen.add(key); out.push(t); }
+        }
       }
     }
     return out;
@@ -383,7 +445,8 @@
   }
 
   function placeUnit(state, p, id, cell) {
-    const u = makeUnit(state, p, id);
+    const u = makeUnit(state, p, id), tile = state.board[cell.r][cell.c];
+    if (tile && canGarrison(u, tile)) { tile.garrison = u; return CARDS[id]; }   // an archer placed into a Siege Tower
     state.board[cell.r][cell.c] = u;
     enterTile(state, u, cell.r, cell.c);
     return CARDS[id];
@@ -395,14 +458,14 @@
       switch (e.op) {
         case 'draw': for (let k = 0; k < e.n; k++) drawToHand(state, ctx.p); break;
         case 'healKing': king.hp = Math.min(king.maxHp, king.hp + e.n); break;
-        case 'kingArmor': king.armor += e.n; break;
+        case 'kingArmor': king.armor += e.n; king.maxArmor += e.n; break;
         case 'infOffer': {
           for (let k = 0; k < 3 && refill(state, ctx.p, 'infDeck', 'infDiscard'); k++) pl.infOffer.push(pl.infDeck.pop());
           pl.deploys += 1; pl.recycles += 1; pl.infOfferId++;
           break;
         }
         case 'moves': pl.moves += e.n; break;
-        case 'healAll': for (const x of allUnits(state, ctx.p)) at(x).hp = at(x).maxHp; break;
+        case 'healAll': for (const x of allUnits(state, ctx.p)) { at(x).hp = at(x).maxHp; at(x).armor = at(x).maxArmor; } break;
         case 'summonInf': {
           const free = spawnTiles(state, ctx.p).sort((a, b) => Math.abs(a.c - KING_C) - Math.abs(b.c - KING_C) || a.c - b.c);
           let left = e.n;
@@ -415,11 +478,11 @@
           break;
         }
         case 'damage': for (const x of resolveTargets(state, e, ctx)) at(x).hp -= e.n; break;
-        case 'rearm': for (const x of resolveTargets(state, e, ctx)) at(x).attacked = false; break;
+        case 'rearm': for (const x of resolveTargets(state, e, ctx)) { at(x).attacked = false; if (at(x).garrison) at(x).garrison.attacked = false; } break;
         case 'buff':
           for (const x of resolveTargets(state, e, ctx)) {
             const u = at(x);
-            u.atk += e.atk || 0; u.hp += e.hp || 0; u.maxHp += e.hp || 0; u.armor += e.armor || 0;
+            u.atk += e.atk || 0; u.hp += e.hp || 0; u.maxHp += e.hp || 0; u.armor += e.armor || 0; u.maxArmor += e.armor || 0;
           }
           break;
         default: break;
@@ -467,10 +530,19 @@
         for (const cell of moveDests(state, r, c)) acts.push({ t: 'move', from: { r, c }, cell });
       }
       if (!u.attacked && !u.disarmed && u.atk > 0) attackTargets(state, r, c).forEach((target) => acts.push({ t: 'attack', from: { r, c }, target }));
-      if (CARDS[u.id].trap && !u.trapped) {
-        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
-          const nr = r + dr, nc = c + dc;
-          if ((dr || dc) && inBounds(nr, nc) && !state.board[nr][nc] && !trapAt(state, nr, nc)) acts.push({ t: 'trap', from: { r, c }, cell: { r: nr, c: nc } });
+      const g = u.garrison;
+      if (g && !g.attacked && !g.disarmed && g.atk > 0) attackTargets(state, r, c, g).forEach((target) => acts.push({ t: 'attack', from: { r, c }, g: true, target }));
+      const card = CARDS[u.id];
+      if (card.rogue && u.stealth && u.ammo > 0) {     // a hidden rogue's one-shot: a trap next to it, or a bomb exactly 2 tiles away
+        if (card.rogue === 'trap') {
+          for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+            const nr = r + dr, nc = c + dc;
+            if ((dr || dc) && inBounds(nr, nc) && !state.board[nr][nc] && !trapAt(state, nr, nc)) acts.push({ t: 'trap', from: { r, c }, cell: { r: nr, c: nc } });
+          }
+        } else {
+          for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
+            if (Math.max(Math.abs(dr), Math.abs(dc)) === 2 && inBounds(r + dr, c + dc)) acts.push({ t: 'bomb', from: { r, c }, cell: { r: r + dr, c: c + dc } });
+          }
         }
       }
     }
@@ -535,37 +607,54 @@
       }
       if (c.effects) runEffects(state, c.effects, { p, target: a.target });
     } else if (a.t === 'move') {
-      const u = state.board[a.from.r][a.from.c];
+      const u = state.board[a.from.r][a.from.c], dest = state.board[a.cell.r][a.cell.c];
       state.board[a.from.r][a.from.c] = null;
-      state.board[a.cell.r][a.cell.c] = u;
       u.moved = true;
       if (!hasKw(u, 'swift')) pl.moves--;
-      log(state, `${CARDS[u.id].name} advances to ${tileName(a.cell)}.`);
-      enterTile(state, u, a.cell.r, a.cell.c);
+      if (dest) { dest.garrison = u; log(state, `${CARDS[u.id].name} climbs into the ${CARDS[dest.id].name}.`); }
+      else {
+        state.board[a.cell.r][a.cell.c] = u;
+        log(state, `${CARDS[u.id].name} ${u.stealth ? 'slips' : 'advances'} to ${tileName(a.cell)}.`);
+        enterTile(state, u, a.cell.r, a.cell.c);
+      }
     } else if (a.t === 'trap') {
       const u = state.board[a.from.r][a.from.c];
-      u.trapped = true;
+      u.ammo = 0; u.stealth = false;
       layTrap(state, p, a.cell, CARDS[u.id].trap);
-      log(state, `${CARDS[u.id].name} lays a ${TRAPS[CARDS[u.id].trap].name}.`);
+      log(state, `${CARDS[u.id].name} lays a ${TRAPS[CARDS[u.id].trap].name} and is revealed.`);
+    } else if (a.t === 'bomb') {
+      const u = state.board[a.from.r][a.from.c];
+      u.ammo = 0; u.stealth = false;
+      log(state, `${CARDS[u.id].name} throws a bomb at ${tileName(a.cell)} and is revealed!`);
+      explode(state, a.cell);
     } else if (a.t === 'attack') {
-      const att = state.board[a.from.r][a.from.c], def = state.board[a.target.r][a.target.c];
+      const tile = state.board[a.from.r][a.from.c], att = a.g ? tile.garrison : tile, def = state.board[a.target.r][a.target.c];
       att.attacked = true;
-      const dmg = attackDamage(att, def);
-      def.hp -= dmg;
-      log(state, `${CARDS[att.id].name} hits ${CARDS[def.id].name} for ${dmg}${dmg === 0 ? ' (blocked by armour)' : ''}.`);
+      let raw = att.atk, sneak = false;
+      if (att.stealth) { raw *= 2; sneak = true; att.stealth = false; }      // a sneak attack hits twice as hard and reveals the rogue
+      const res = strike(state, att, a.from, def, a.target, raw);
+      log(state, `${sneak ? 'Sneak attack! ' : ''}${CARDS[att.id].name} hits ${CARDS[def.id].name}${res.behind ? ' from behind' : ''} for ${describeHit(res)}.`);
       const adjacent = Math.max(Math.abs(a.from.r - a.target.r), Math.abs(a.from.c - a.target.c)) === 1;
-      if (adjacent && def.atk > 0 && inRange(def, a.target, a.from)) {
-        const back = attackDamage(def, att);
-        att.hp -= back;
-        if (back) log(state, `${CARDS[def.id].name} strikes back for ${back}.`);
+      if (adjacent) {
+        const defFwd = (a.from.r - a.target.r) * dirOf(def.p);               // >= 0: the attacker is in front of or beside the defender
+        if (hasKw(def, 'counter')) {
+          const counter = Math.floor(raw / 2);
+          if (def.hp > 0 && !res.behind && defFwd >= 0 && counter > 0) {
+            const back = strike(state, null, null, att, a.from, counter);
+            log(state, `${CARDS[def.id].name} counters for ${describeHit(back)}.`);
+          }
+        } else if (def.atk > 0 && !hasKw(def, 'wall') && inRange(def, a.target, a.from)) {
+          const back = strike(state, def, a.target, att, a.from, def.atk);
+          log(state, `${CARDS[def.id].name} strikes back for ${describeHit(back)}.`);
+        }
       }
     }
     cleanup(state);
     return state;
   }
 
-  const VERSION = 'r11'; // bump whenever a rule or card changes: recorded games replay only on the version that recorded them
-  const api = { VERSION, ROWS, COLS, KING_C, KING_HP, HAND_MAX, MOVES, DEFENCE_ZONE, MAX_TRAPS, SYM, SUIT_ROLE, CLS_SYM, TRAPS, CARDS, DECK, INF_DECK, newGame, legalActions, applyAction, clone, hasKw, suitOf, isKing, isInf, sameRef, locEq, backRow, dirOf, kingOf, inRange, reachTiles, attackTargets, spawnTiles, spawnTilesFor, moveDests, trapAt, unitAt };
+  const VERSION = 'r12'; // bump whenever a rule or card changes: recorded games replay only on the version that recorded them
+  const api = { VERSION, ROWS, COLS, KING_C, KING_HP, HAND_MAX, MOVES, DEFENCE_ZONE, SYM, SUIT_ROLE, CLS_SYM, TRAPS, CARDS, DECK, INF_DECK, newGame, legalActions, applyAction, clone, hasKw, suitOf, isKing, isInf, sameRef, locEq, backRow, dirOf, kingOf, inRange, reachTiles, attackTargets, spawnTiles, spawnTilesFor, moveDests, trapAt, unitAt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TBC = api;
 })(typeof window !== 'undefined' ? window : globalThis);

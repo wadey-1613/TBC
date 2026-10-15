@@ -21,7 +21,7 @@
   .trap { position:absolute; inset:5px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:24px; border:2px dashed; background:rgba(0,0,0,.25); }
   .trap.p0 { border-color:var(--me); } .trap.p1 { border-color:var(--foe); }
   .float { position:absolute; left:0; right:0; top:14px; text-align:center; font-size:24px; font-weight:900; pointer-events:none; z-index:5; text-shadow:0 1px 3px #000; animation:floatup 1.3s ease-out forwards; }
-  .float.dmg { color:#ff4d4d; } .float.heal { color:#5fe08d; } .float.dead { color:#fff; font-size:20px; }
+  .float.arm { color:#7fc4ff; font-size:18px; } .float.dmg { color:#ff4d4d; } .float.heal { color:#5fe08d; } .float.dead { color:#fff; font-size:20px; }
   @keyframes floatup { 0% { transform:translateY(8px); opacity:0; } 15% { opacity:1; } 100% { transform:translateY(-26px); opacity:0; } }
   .unit { position:absolute; inset:0; border-radius:5px; padding:3px 4px 3px; display:flex; flex-direction:column; justify-content:space-between; gap:2px; background:linear-gradient(#2c3348,#222839); border-top:4px solid var(--line); overflow:hidden; }
   .unit.S { border-top-color:var(--S); } .unit.C { border-top-color:var(--C); } .unit.D { border-top-color:var(--D); } .unit.H { border-top-color:var(--H); } .unit.I { border-top-color:var(--I); }
@@ -38,13 +38,17 @@
   @keyframes healflash { 0%,30% { background:#1f7a46; } 100% { } }
   .unit .nm { font-weight:700; font-size:11px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-top:2px; }
   .unit .rk { font-size:10px; font-weight:800; position:absolute; top:-1px; right:4px; color:var(--dim); }
-  .unit .tl { position:absolute; top:0; left:4px; font-size:10px; font-weight:800; color:var(--gold); white-space:nowrap; }
+  .unit .tl { position:absolute; top:-1px; left:4px; font-size:8px; font-weight:800; color:var(--gold); white-space:nowrap; }
+  .unit.hastl .nm { padding-top:9px; }
   .hpbar { height:5px; border-radius:3px; background:#0f1219; overflow:hidden; }
   .hpbar i { display:block; height:100%; background:var(--hp); }
   .hpbar i.mid { background:#e6c04a; } .hpbar i.low { background:#ff5656; }
   .stats { display:flex; gap:3px; justify-content:space-between; }
   .pill { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:2px; border-radius:5px; font-weight:800; font-size:12px; padding:1px 2px; white-space:nowrap; background:#10131b; }
   .pill.a { color:var(--atk); } .pill.ar { color:var(--arm); } .pill.h { color:var(--hp); }
+  .pill.ar.worn { color:#6a8097; }
+  .unit.hidden { opacity:.78; outline:1px dashed #b9a0ff; outline-offset:-3px; }
+  .unit .gar { font-size:9px; color:var(--H); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .pill.a.buffed, .pill.ar.buffed { color:#ffe08a; background:#3b3115; }
   .pill.h.hurt { color:#ff6b6b; background:#3a1518; }
   .pill.zero { opacity:.45; }
@@ -109,7 +113,7 @@
     <div id="foeBar" class="bar"></div>
     <div id="board"></div>
     <div id="myBar" class="bar"></div>
-    <div id="actrow"><span id="hint"></span><button id="trapBtn" class="alt small" hidden>Lay trap</button><button id="placeBtn" class="alt small" hidden></button><button id="offerBtn" class="alt small" hidden>Squad offer</button><button id="endBtn">End turn</button></div>
+    <div id="actrow"><span id="hint"></span><button id="trapBtn" class="alt small" hidden>Lay trap</button><button id="bombBtn" class="alt small" hidden>Throw bomb</button><button id="placeBtn" class="alt small" hidden></button><button id="offerBtn" class="alt small" hidden>Squad offer</button><button id="endBtn">End turn</button></div>
     <div id="hand"></div>
   </div>
   <div id="side">
@@ -122,16 +126,18 @@
       Your hand holds up to 3 cards (squad cards and infantry) and you can play <b>1 card from your hand per turn</b>. Playing the squad card you were just offered doesn't count, and a card you put into your hand this turn can't be played until your next turn. When a deck runs out, its discard pile is shuffled back in.<br>
       <b>Move</b> up to 3 units a step each (forward or sideways), but only units on the board when your turn began. Every unit may attack once.
       New cards appear on your back row. <b>Defence</b> units (▣ and ♠) can also go anywhere within 2 tiles of your king.<br>
-      <b>Rogues 🗡</b> can't attack. They move 2 tiles and lay one trap a turn on an empty tile next to them. An enemy that steps on it springs it:
-      ☠ <b>Poison</b> 1 damage on each of its next 2 turns · 🕸 <b>Sticky</b> can't move next turn · ✦ <b>Flash</b> can't attack next turn. You can't step on your own traps. Max 5 traps each.<br>
-      <b>Stats:</b> <span style="color:var(--atk)">⚔ attack</span> · <span style="color:var(--arm)">🛡 armour</span> · <span style="color:var(--hp)">♥ health (now/max)</span>.<br>
+      <b>Rogues 🗡</b> start <b>hidden</b>: they can't be targeted. A hidden rogue moves 2 tiles in any direction and has <b>one</b> special action, which reveals it for good:
+      lay a trap (☠ Poison 1 damage on each of its next 2 turns · 🕸 Sticky can't move next turn · ✦ Flash can't attack next turn) on an empty tile next to it, throw a 💣 bomb (exactly 2 tiles away, 1 damage to that tile and every tile around it, <i>friends too</i>, ignores armour), or make a <b>sneak attack</b> for double damage. After that it is a plain melee unit. Enemies that step on a trap spring it.<br>
+      <b>Stats:</b> <span style="color:var(--atk)">⚔ attack</span> · <span style="color:var(--arm)">🛡 armour plates</span> · <span style="color:var(--hp)">♥ health</span>.
+      <b>Armour</b> is a pool of plates: a normal hit removes half its strength (rounded up) from the plates and leaves health alone; once they're gone, hits go to health at full strength. Siege (♦ breach), poison and bombs ignore armour.<br>
+      <b>Walls</b> (♠ cards, the ♦ Siege Tower and ▣ defence infantry) can't attack and take <b>double damage from behind</b>. ▣ Defence infantry counter a melee hit from the front or sides for half its strength (if they survive); ♠ walls never counter. A <b>Siege Tower</b> holds one archer: it shoots from inside, can't be targeted, and drops out if the tower falls.<br>
       <b>Reach</b> (up is toward the enemy castle):
       <pre>MELEE      RANGE       DEFENCE
 x x x      x x x       x x x
 x M x      x x x       x D x
 x x x      - - -
              R</pre>
-      A unit strikes back only if the attacker is adjacent and inside its own shape. <b class="D">♦ Siege</b> ignores armour. Damage boosts only hit enemies one of your units could attack. Right-click / Esc cancels.
+      Fighting units strike back at an adjacent attacker inside their own shape. <b class="D">♦ Siege</b> ignores armour. Damage boosts only hit enemies one of your units could attack. Right-click / Esc cancels.
     </div>
   </div>
 </div>

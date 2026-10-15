@@ -12,9 +12,11 @@
       for (let c = 0; c < COLS; c++) {
         const u = s.board[r][c];
         if (!u || u.p !== p || E.isKing(u)) continue;
-        v += u.atk * 1.2 + u.hp * 0.8 + u.armor * 1.5;
+        v += u.atk * 1.2 + u.hp * 0.8 + u.armor * 2;                           // armour plates soak 2 damage each
         v -= u.poison * 1.2 + u.stuck * 1 + u.blind * 1.5;                     // trapped units are worth less
-        if (E.CARDS[u.id].trap) v += 3 + Math.abs(r - home) * 0.5;             // rogues: lay traps further up the board
+        if (u.ammo > 0) v += 3 + Math.abs(r - home) * 0.5;                      // rogues keep their one-shot, further up the board is better
+        if (u.stealth) v += 1;
+        if (u.garrison) v += u.garrison.atk * 1.2 + u.garrison.hp * 0.8 + u.garrison.armor * 2 + 2;  // an archer safe inside a tower
         if (u.atk > 0) {
           const adv = Math.abs(r - home);
           const distKing = Math.max(Math.abs(r - foeRow), Math.abs(c - KING_C));
