@@ -9,16 +9,18 @@
           --S:#9fb4d9; --C:#8fd6a0; --D:#ff9c6b; --H:#ff7b9c; --I:#c9ccd6; --atk:#ff9f43; --arm:#7fc4ff; --hp:#5fd38d; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font:13px/1.25 system-ui,sans-serif; user-select:none; }
-  #app { display:grid; grid-template-columns: minmax(0,1fr) 400px; gap:12px; max-width:1240px; margin:0 auto; padding:10px; align-items:start; }
-  #main { display:flex; flex-direction:column; gap:10px; min-width:0; }
+  #app { display:grid; grid-template-columns: minmax(0,1fr) 320px; gap:12px; max-width:1220px; margin:0 auto; padding:10px; align-items:start; }
+  #main { display:flex; flex-direction:column; gap:6px; min-width:0; max-width:800px; width:100%; margin:0 auto; }
   #board { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
-  .cell { height:80px; border:1px solid #2a3144; border-radius:6px; position:relative; background:#181c26; }
+  .cell { height:68px; border:1px solid #2a3144; border-radius:6px; position:relative; background:#181c26; }
   .cell.home0 { background:#16253a; } .cell.home1 { background:#3a1b22; }
   .cell.reach { background:rgba(242,193,78,.08); box-shadow: inset 0 0 0 2px rgba(242,193,78,.3); }
   .cell.dest { border:2px solid var(--gold); background:rgba(242,193,78,.14); cursor:pointer; }
   .cell.ko { animation:koflash .9s ease-out; }
   @keyframes koflash { 0% { background:#a8242c; } 100% { background:#181c26; } }
-  .float { position:absolute; left:0; right:0; top:18px; text-align:center; font-size:24px; font-weight:900; pointer-events:none; z-index:5; text-shadow:0 1px 3px #000; animation:floatup 1.3s ease-out forwards; }
+  .trap { position:absolute; inset:5px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:24px; border:2px dashed; background:rgba(0,0,0,.25); }
+  .trap.p0 { border-color:var(--me); } .trap.p1 { border-color:var(--foe); }
+  .float { position:absolute; left:0; right:0; top:14px; text-align:center; font-size:24px; font-weight:900; pointer-events:none; z-index:5; text-shadow:0 1px 3px #000; animation:floatup 1.3s ease-out forwards; }
   .float.dmg { color:#ff4d4d; } .float.heal { color:#5fe08d; } .float.dead { color:#fff; font-size:20px; }
   @keyframes floatup { 0% { transform:translateY(8px); opacity:0; } 15% { opacity:1; } 100% { transform:translateY(-26px); opacity:0; } }
   .unit { position:absolute; inset:0; border-radius:5px; padding:3px 4px 3px; display:flex; flex-direction:column; justify-content:space-between; gap:2px; background:linear-gradient(#2c3348,#222839); border-top:4px solid var(--line); overflow:hidden; }
@@ -36,7 +38,7 @@
   @keyframes healflash { 0%,30% { background:#1f7a46; } 100% { } }
   .unit .nm { font-weight:700; font-size:11px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-top:2px; }
   .unit .rk { font-size:10px; font-weight:800; position:absolute; top:-1px; right:4px; color:var(--dim); }
-  .unit .new { position:absolute; top:0; left:4px; font-size:9px; font-weight:800; color:var(--gold); text-transform:uppercase; }
+  .unit .tl { position:absolute; top:0; left:4px; font-size:10px; font-weight:800; color:var(--gold); white-space:nowrap; }
   .hpbar { height:5px; border-radius:3px; background:#0f1219; overflow:hidden; }
   .hpbar i { display:block; height:100%; background:var(--hp); }
   .hpbar i.mid { background:#e6c04a; } .hpbar i.low { background:#ff5656; }
@@ -46,73 +48,84 @@
   .pill.a.buffed, .pill.ar.buffed { color:#ffe08a; background:#3b3115; }
   .pill.h.hurt { color:#ff6b6b; background:#3a1518; }
   .pill.zero { opacity:.45; }
-  #side { display:flex; flex-direction:column; gap:8px; min-width:0; position:sticky; top:10px; }
-  .bar { display:flex; align-items:center; gap:10px; background:var(--panel); border-radius:8px; padding:6px 12px; color:var(--dim); flex-wrap:wrap; }
+  .bar { display:flex; align-items:center; gap:10px; background:var(--panel); border-radius:8px; padding:5px 12px; color:var(--dim); flex-wrap:wrap; font-size:12px; }
   .bar b { color:var(--text); } .bar .grow { flex:1; }
   .active-badge { color:var(--gold); font-weight:700; }
-  .sect h4 { margin:0 0 4px; font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; display:flex; justify-content:space-between; }
-  .sect h4 span { text-transform:none; letter-spacing:0; }
-  .row3 { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
-  .cwrap { display:flex; flex-direction:column; gap:3px; min-width:0; }
-  .card { height:140px; background:linear-gradient(#303853,#232a3d); border:2px solid var(--line); border-top:5px solid var(--line); border-radius:9px; padding:4px 5px; display:flex; flex-direction:column; gap:2px; min-width:0; }
+  #actrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  #hint { color:var(--dim); flex:1; min-width:200px; }
+  #hand { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .card { height:132px; background:linear-gradient(#303853,#232a3d); border:2px solid var(--line); border-top:5px solid var(--line); border-radius:9px; padding:4px 6px; display:flex; flex-direction:column; gap:2px; min-width:0; position:relative; }
   .card.S { border-top-color:var(--S); } .card.C { border-top-color:var(--C); } .card.D { border-top-color:var(--D); } .card.H { border-top-color:var(--H); } .card.inf { border-top-color:var(--I); }
   .card.playable { border-color:var(--ok); cursor:pointer; }
   .card.selected { border-color:#fff; transform:translateY(-3px); }
-  .card.dim { opacity:.55; }
-  .card.empty { border-style:dashed; background:none; align-items:center; justify-content:center; color:#4b556d; text-align:center; font-size:11px; }
+  .card.dim { opacity:.6; }
+  .card.empty { border-style:dashed; background:none; align-items:center; justify-content:center; color:#4b556d; font-size:11px; }
   .card .top { font-weight:800; font-size:12px; } .card .top.red { color:#ff7b7b; }
   .card .nm { text-align:center; font-weight:700; font-size:12px; line-height:1.1; }
   .card .ty { text-align:center; font-size:9px; color:var(--dim); text-transform:uppercase; }
   .card .tx { font-size:10px; flex:1; text-align:center; color:#cfd5e6; overflow:hidden; line-height:1.15; }
   .card .tags { font-size:9px; color:var(--gold); text-align:center; text-transform:uppercase; }
   .card .pill { font-size:14px; padding:2px 2px; }
+  .card.big { width:190px; height:252px; padding:8px 10px; gap:5px; }
+  .card.big .top { font-size:16px; } .card.big .nm { font-size:17px; } .card.big .ty { font-size:11px; } .card.big .tags { font-size:11px; }
+  .card.big .tx { font-size:13px; } .card.big .pill { font-size:19px; padding:4px 2px; }
+  .ribbon { position:absolute; top:34px; left:-6px; right:-6px; text-align:center; font-weight:900; font-size:14px; letter-spacing:.08em; padding:3px 0; color:#111; }
+  .ribbon.deploy { background:var(--ok); } .ribbon.recycle { background:#6db5ff; } .ribbon.discard { background:#ff6b6b; }
   button { background:var(--gold); color:#111; border:0; border-radius:8px; padding:9px 16px; font-weight:800; font-size:14px; cursor:pointer; }
-  button.small { padding:4px 6px; font-size:11px; width:100%; }
+  button.small { padding:6px 10px; font-size:12px; }
   button.alt { background:#3a4560; color:var(--text); }
   button:disabled { background:#3a3f4d; color:#7b8294; cursor:default; }
-  #hint { color:var(--dim); min-height:32px; flex:1; }
-  #endrow { display:flex; justify-content:space-between; align-items:center; gap:10px; }
-  #log { height:150px; overflow:auto; font-size:11px; color:var(--dim); background:var(--panel); border-radius:8px; padding:8px; }
+  #side { display:flex; flex-direction:column; gap:8px; min-width:0; position:sticky; top:10px; max-height:calc(100vh - 20px); }
+  #log { height:260px; overflow:auto; font-size:11px; color:var(--dim); background:var(--panel); border-radius:8px; padding:8px; }
   #log div { padding:2px 0; border-bottom:1px solid #262c3b; }
-  #help { font-size:11px; color:var(--dim); background:var(--panel); border-radius:8px; padding:8px 10px; }
+  #help { font-size:11px; color:var(--dim); background:var(--panel); border-radius:8px; padding:8px 10px; overflow:auto; }
   #help pre { margin:4px 0; font:11px/1.2 ui-monospace,monospace; color:var(--text); }
   #help b.S { color:var(--S); } #help b.C { color:var(--C); } #help b.D { color:var(--D); } #help b.H { color:var(--H); }
+  #picker { position:fixed; inset:0; background:rgba(8,10,16,.72); display:none; align-items:center; justify-content:center; z-index:8; padding:16px; }
+  #picker.show { display:flex; }
+  #picker .box { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px 24px; text-align:center; max-width:100%; box-shadow:0 20px 60px rgba(0,0,0,.6); }
+  #picker h2 { margin:0 0 4px; font-size:20px; } #picker p { margin:0 0 14px; color:var(--dim); min-height:18px; }
+  .pickrow { display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-bottom:14px; }
+  .pickcol { display:flex; flex-direction:column; gap:6px; align-items:stretch; }
+  .btnrow { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
   #overlay { position:fixed; inset:0; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; z-index:10; }
   #overlay.show { display:flex; }
   #overlay .box { background:var(--panel); padding:26px 34px; border-radius:14px; text-align:center; max-width:480px; }
   #overlay h1 { margin:0 0 6px; } #overlay p { color:var(--dim); }
-  @media (max-width: 960px) { #app { grid-template-columns:1fr; } #side { position:static; } .cell { height:70px; } .unit .nm { font-size:9px; } .pill { font-size:10px; } }
+  @media (max-width: 980px) { #app { grid-template-columns:1fr; } #side { position:static; max-height:none; } .cell { height:60px; } .unit .nm { font-size:9px; } .pill { font-size:10px; } .card.big { width:150px; height:230px; } }
 </style>
 </head>
 <body>
 <div id="app">
   <div id="main">
+    <div id="foeBar" class="bar"></div>
     <div id="board"></div>
+    <div id="myBar" class="bar"></div>
+    <div id="actrow"><span id="hint"></span><button id="trapBtn" class="alt small" hidden>Lay trap</button><button id="placeBtn" class="alt small" hidden></button><button id="offerBtn" class="alt small" hidden>Squad offer</button><button id="endBtn">End turn</button></div>
+    <div id="hand"></div>
+  </div>
+  <div id="side">
     <div id="log"></div>
     <div id="help">
       <b>Goal:</b> march up the table and destroy the enemy castle (king). Yours is at the bottom.<br>
-      <b>Each turn:</b> you are offered <b>3 infantry</b>: deploy one (free), recycle one to the bottom of the deck, the third is discarded. When a deck runs out, its discard pile is shuffled back in.
-      You are offered <b>2 squad cards</b>: play one or hold it (hand max 3), the other is discarded. You can play 1 squad card a turn.
-      Move up to 3 units a step each (forward or sideways), but only units that were on the board when your turn began. Every unit may attack once. New cards appear on your back row.<br>
-      <b>Card stats:</b> <span style="color:var(--atk)">⚔ attack</span> · <span style="color:var(--arm)">🛡 armour (cuts every hit)</span> · <span style="color:var(--hp)">♥ health (now/max)</span>.<br>
-      <b>Reach shapes</b> (up is toward the enemy castle):
+      <b>Each turn:</b> a pop-up offers <b>3 infantry</b>: deploy one (free), recycle one to the bottom of the deck, the third is discarded. Then <b>2 squad cards</b>: play one or hold it in your hand (max 3), the other is discarded.
+      You can play 1 squad card a turn, from the offer or your hand. When a deck runs out, its discard pile is shuffled back in.<br>
+      <b>Move</b> up to 3 units a step each (forward or sideways), but only units on the board when your turn began. Every unit may attack once.
+      New cards appear on your back row. <b>Defence</b> units (▣ and ♠) can also go anywhere within 2 tiles of your king.<br>
+      <b>Rogues 🗡</b> can't attack. They move 2 tiles and lay one trap a turn on an empty tile next to them. An enemy that steps on it springs it:
+      ☠ <b>Poison</b> 1 damage on each of its next 2 turns · 🕸 <b>Sticky</b> can't move next turn · ✦ <b>Flash</b> can't attack next turn. You can't step on your own traps. Max 5 traps each.<br>
+      <b>Stats:</b> <span style="color:var(--atk)">⚔ attack</span> · <span style="color:var(--arm)">🛡 armour</span> · <span style="color:var(--hp)">♥ health (now/max)</span>.<br>
+      <b>Reach</b> (up is toward the enemy castle):
       <pre>MELEE      RANGE       DEFENCE
 x x x      x x x       x x x
 x M x      x x x       x D x
 x x x      - - -
              R</pre>
-      A unit strikes back only if the attacker is adjacent and inside its own shape. <b class="D">♦ Siege</b> ignores armour. Damage boosts only hit enemies one of your units could attack. Select a unit to see its reach. Right-click / Esc cancels.
+      A unit strikes back only if the attacker is adjacent and inside its own shape. <b class="D">♦ Siege</b> ignores armour. Damage boosts only hit enemies one of your units could attack. Right-click / Esc cancels.
     </div>
   </div>
-  <div id="side">
-    <div id="foeBar" class="bar"></div>
-    <div id="myBar" class="bar"></div>
-    <div class="sect"><h4>Infantry offer <span id="infInfo"></span></h4><div id="infantry" class="row3"></div></div>
-    <div class="sect"><h4>Squad offer <span id="squadInfo"></span></h4><div id="squad" class="row3"></div></div>
-    <div class="sect"><h4>Your hand (max 3)</h4><div id="hand" class="row3"></div></div>
-    <div id="endrow"><span id="hint"></span><button id="endBtn">End turn</button></div>
-  </div>
 </div>
+<div id="picker"><div class="box" id="pickerBox"></div></div>
 <div id="overlay"><div class="box" id="overlayBox"></div></div>
 <script src="engine.js"></script>
 <script src="ai.js"></script>

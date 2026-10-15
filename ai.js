@@ -13,6 +13,8 @@
         const u = s.board[r][c];
         if (!u || u.p !== p || E.isKing(u)) continue;
         v += u.atk * 1.2 + u.hp * 0.8 + u.armor * 1.5;
+        v -= u.poison * 1.2 + u.stuck * 1 + u.blind * 1.5;                     // trapped units are worth less
+        if (E.CARDS[u.id].trap) v += 3 + Math.abs(r - home) * 0.5;             // rogues: lay traps further up the board
         if (u.atk > 0) {
           const adv = Math.abs(r - home);
           const distKing = Math.max(Math.abs(r - foeRow), Math.abs(c - KING_C));
@@ -21,6 +23,15 @@
           if (E.inRange(u, { r, c }, { r: foeRow, c: KING_C })) v += u.atk * 1.5;
         } else if (Math.abs(r - home) <= 2) v += 1.5;              // walls hold the line near home
       }
+    }
+    for (const t of s.traps) {                                                   // own traps near the enemy are valuable
+      if (t.p !== p) continue;
+      let d = 4;
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const u = s.board[r][c];
+        if (u && u.p !== p && !E.isKing(u)) d = Math.min(d, Math.max(Math.abs(r - t.r), Math.abs(c - t.c)));
+      }
+      v += 2.5 + Math.max(0, 4 - d) * 0.6;
     }
     return v;
   }

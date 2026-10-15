@@ -49,12 +49,13 @@ const put = (s, p, r, c, id) => { const k = E.CARDS[id]; return (s.board[r][c] =
 const acts = (s, t) => E.legalActions(s).filter((a) => a.t === t);
 const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target });
 
-{ // new cards appear on your own back row; player 1 on the far row
+{ // new cards appear on your own back row (defence units may also go beside/in front of the king)
   const s = fresh();
-  assert(acts(s, 'deploy').every((a) => a.cell.r === 0), 'p0 spawns on row 0');
-  assert(acts(s, 'deploy').every((a) => a.cell.c !== E.KING_C), 'cannot spawn on the king');
+  const nonDef = (st, p) => acts(st, 'deploy').filter((a) => E.CARDS[st.players[p].infOffer[a.pick]].reach !== 'defence');
+  assert(nonDef(s, 0).length > 0 && nonDef(s, 0).every((a) => a.cell.r === 0), 'p0 spawns on row 0');
+  assert(acts(s, 'deploy').every((a) => a.cell.c !== E.KING_C || a.cell.r !== 0), 'cannot spawn on the king');
   E.applyAction(s, { t: 'end' });
-  assert(acts(s, 'deploy').every((a) => a.cell.r === 8), 'p1 spawns on row 8');
+  assert(nonDef(s, 1).every((a) => a.cell.r === E.ROWS - 1), 'p1 spawns on its own back row');
 }
 { // one deploy per turn; up to 3 moves, one step per unit, never backward
   const s = fresh();
@@ -140,7 +141,7 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
   assert.deepStrictEqual(hits(d), ['3,2','3,4','4,2','4,3','4,4'], 'defence = front arc + sides');
   // player 1 faces down
   const q = fresh();
-  put(q, 1, 5, 3, 'iArcher'); put(q, 0, 3, 3, 'iSpear'); put(q, 0, 7, 3, 'iSpear');
+  put(q, 1, 5, 3, 'iArcher'); put(q, 0, 3, 3, 'iSpear'); put(q, 0, 6, 3, 'iSpear');
   E.applyAction(q, { t: 'end' });
   assert.deepStrictEqual(hits(q), ['2,3'.replace('2','3')], 'player 1 shoots down the board');
 }
@@ -175,10 +176,10 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
 }
 { // reaching and killing the castle wins
   const s = fresh();
-  put(s, 0, 7, 3, 'iSword');
+  put(s, 0, E.ROWS - 2, 3, 'iSword');
   const k = acts(s, 'attack');
   assert.strictEqual(k.length, 1);
-  s.board[8][3].hp = 1;
+  s.board[E.ROWS - 1][3].hp = 1;
   E.applyAction(s, k[0]);
   assert.strictEqual(s.winner, 0);
 }
@@ -196,17 +197,94 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
 }
 { // damage boosts only work on enemies inside the reach of one of your units
   const s = fresh();
-  put(s, 1, 7, 3, 'iSword');                       // far away
+  put(s, 1, 6, 3, 'iSword');                       // far away
   s.players[0].hand = ['H9', 'H7'];                // Fire Arrows (targeted) and Volley (area)
   assert.strictEqual(acts(s, 'play').length, 0, 'nothing in reach, so neither boost can be played');
-  put(s, 0, 5, 3, 'iArcher');                      // range reaches rows 7 and 8 -> row 7 target
+  put(s, 0, 4, 3, 'iArcher');                      // range reaches rows 6 and 7 -> the sword at row 6
   const pl = acts(s, 'play');
-  assert(pl.some((a) => a.hand === 0 && a.target.r === 7), 'Fire Arrows can hit what the archer could');
+  assert(pl.some((a) => a.hand === 0 && a.target.r === 6), 'Fire Arrows can hit what the archer could');
   assert(pl.some((a) => a.hand === 1), 'Volley is playable with an enemy in reach');
   const s2 = fresh();
-  put(s2, 1, 7, 3, 'iSword'); put(s2, 1, 4, 5, 'iSword'); put(s2, 0, 3, 3, 'iSpear');
+  put(s2, 1, 6, 3, 'iSword'); put(s2, 1, 4, 5, 'iSword'); put(s2, 0, 1, 3, 'iSpear');
   s2.players[0].hand = ['H9'];
   assert.strictEqual(acts(s2, 'play').length, 0, 'no unit of mine reaches either enemy');
+}
+{ // defence units may be placed anywhere around the king; others only on the back row
+  const s = fresh();
+  s.players[0].hand = ['S4', 'D4']; s.players[0].squadOffer = [];
+  const fort = acts(s, 'play').filter((a) => a.hand === 0).map((a) => `${a.cell.r},${a.cell.c}`);
+  assert(fort.includes('1,3') && fort.includes('2,2') && fort.includes('0,1'), 'fortress can go in front of and beside the king');
+  assert(!fort.includes('3,3') && !fort.includes('2,0'), 'but not outside the zone');
+  assert(acts(s, 'play').filter((a) => a.hand === 1).every((a) => a.cell.r === 0), 'a siege unit still spawns on the back row only');
+  const s2 = E.newGame(5);
+  s2.players[0].infOffer = ['iShield', 'iSword', 'iArcher'];
+  const dep = (pick) => acts(s2, 'deploy').filter((a) => a.pick === pick).map((a) => a.cell.r);
+  assert(dep(0).some((r) => r > 0), 'defence infantry can be placed in front of the king');
+  assert(dep(1).every((r) => r === 0) && dep(2).every((r) => r === 0), 'other infantry only on the back row');
+}
+{ // rogues: move 2 tiles, cannot attack, one trap per turn
+  const s = fresh();
+  put(s, 0, 2, 3, 'iPoisoner'); put(s, 1, 3, 3, 'iSword');
+  assert(!acts(s, 'attack').length, 'rogues cannot attack');
+  const mv = acts(s, 'move').filter((m) => m.from.r === 2 && m.from.c === 3).map((m) => `${m.cell.r},${m.cell.c}`);
+  assert(mv.includes('4,3') === false, 'cannot pass through an enemy unit');
+  const s2 = fresh();
+  put(s2, 0, 2, 3, 'iPoisoner');
+  const m2 = acts(s2, 'move').map((m) => `${m.cell.r},${m.cell.c}`);
+  assert(m2.includes('4,3') && m2.includes('3,2') && m2.includes('3,4') && m2.includes('2,1') && m2.includes('3,3'), 'moves up to 2 forward or sideways');
+  assert(!m2.includes('1,3') && !m2.includes('0,3'), 'never backward');
+  const tr = acts(s2, 'trap');
+  assert.strictEqual(tr.length, 8, 'a trap can go on any of the 8 adjacent empty tiles');
+  E.applyAction(s2, tr.find((a) => a.cell.r === 3 && a.cell.c === 3));
+  assert.strictEqual(acts(s2, 'trap').length, 0, 'one trap per rogue per turn');
+  assert.strictEqual(s2.traps.length, 1);
+  assert(!acts(s2, 'move').some((m) => m.cell.r === 3 && m.cell.c === 3), 'you cannot walk onto your own trap');
+}
+{ // trap effects: poison 1 a turn for 2 turns, sticky = no move for a turn, flash = no attack for a turn
+  const run = (type) => {
+    const s = fresh();
+    put(s, 0, 2, 3, ({ poison: 'iPoisoner', sticky: 'iTrapper', flash: 'iSaboteur' })[type]);
+    E.applyAction(s, acts(s, 'trap').find((a) => a.cell.r === 3 && a.cell.c === 3));
+    E.applyAction(s, { t: 'end' });
+    const v = put(s, 1, 4, 3, 'iSword');            // player 1's swordsman steps onto the trap
+    v.fresh = false;
+    E.applyAction(s, acts(s, 'move').find((m) => m.from.r === 4 && m.cell.r === 3 && m.cell.c === 3));
+    assert.strictEqual(s.traps.length, 0, 'trap is used up');
+    return { s, v };
+  };
+  let { s, v } = run('poison');
+  assert.strictEqual(v.poison, 2);
+  E.applyAction(s, { t: 'end' }); E.applyAction(s, { t: 'end' });
+  assert.strictEqual(v.hp, 1, 'first poison tick'); E.applyAction(s, { t: 'end' }); E.applyAction(s, { t: 'end' });
+  assert.strictEqual(s.board[3][3], null, 'second tick kills a 2-health swordsman');
+  ({ s, v } = run('sticky'));
+  E.applyAction(s, { t: 'end' });
+  assert(acts(s, 'move').length === 0 || !acts(s, 'move').some((m) => m.from.r === 3 && m.from.c === 3), 'but the opponent is acting; check on the victim turn');
+  E.applyAction(s, { t: 'end' });
+  assert(!acts(s, 'move').some((m) => m.from.r === 3 && m.from.c === 3), 'the stuck unit cannot move on its next turn');
+  E.applyAction(s, { t: 'end' }); E.applyAction(s, { t: 'end' });
+  assert(acts(s, 'move').some((m) => m.from.r === 3 && m.from.c === 3), 'and moves freely the turn after');
+  ({ s, v } = run('flash'));
+  put(s, 0, 2, 3, 'iSpear');                         // one of mine right next to the victim
+  E.applyAction(s, { t: 'end' }); E.applyAction(s, { t: 'end' });   // player 1's next turn: the victim is blinded
+  assert(!acts(s, 'attack').some((a) => a.from.r === 3), 'a blinded unit cannot attack on its next turn');
+  E.applyAction(s, { t: 'end' }); E.applyAction(s, { t: 'end' });
+  assert(acts(s, 'attack').some((a) => a.from.r === 3), 'and attacks normally after that');
+}
+{ // Reinforcements: a second infantry offer
+  const s = E.newGame(9);
+  const pl = s.players[0];
+  const before = pl.infOffer.length;
+  pl.hand = ['C7']; pl.squadLeft = 1;
+  E.applyAction(s, { t: 'play', hand: 0 });
+  assert.strictEqual(pl.infOffer.length, before + 3, '3 more infantry offered');
+  assert.strictEqual(pl.deploys, 2); assert.strictEqual(pl.recycles, 2);
+}
+{ // at most MAX_TRAPS traps per player: the oldest disappears
+  const s = fresh();
+  for (let c = 0; c < 6; c++) { const u = put(s, 0, 3, c, 'iPoisoner'); u.trapped = false; }
+  for (let c = 0; c < 6; c++) E.applyAction(s, acts(s, 'trap').find((a) => a.from.c === c && a.cell.r === 4));
+  assert.strictEqual(s.traps.length, E.MAX_TRAPS);
 }
 { // an empty deck is rebuilt from its own discard pile; running out is never a loss
   const s = fresh();

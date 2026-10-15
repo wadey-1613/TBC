@@ -1,15 +1,27 @@
 # TBC — King's Table (prototype)
 
-War-sim card game on a shared 7x9 grid: march up the table and destroy the enemy castle (king).
+War-sim card game on a shared 7x8 grid: march up the table and destroy the enemy castle (king).
 Open `index.html` to play against the AI. `node test.js` runs rules tests and playouts.
 
+## Board
+7 wide x 8 deep. Your castle (king) is at the bottom, theirs at the top. New cards appear on your back row.
+**Defence** units (▣ infantry and ♠ cards) can also be placed anywhere within 2 tiles of your king.
+
 ## Per turn
-1. **Infantry offer (3 cards):** deploy one (free, it appears on your back row), **recycle** one to the bottom of the infantry deck, and the third is **discarded** for good.
-2. **Squad offer (2 cards):** use one, either **play** it (units appear on your back row, boosts take effect) or **hold** it in your hand (max 3). The other is discarded. You can play **one** squad card per turn, the offered one or one from your hand.
-3. **Move up to 3 units**, one tile each, forward or sideways. Only units that were already on the board when your turn began can move; anything you place this turn is *new* and has to wait. (*Swift* units, like the Champion, don't use up one of the 3 moves.)
+1. **Infantry pop-up (3 cards):** deploy one (free), **recycle** one to the bottom of the infantry deck, the third is **discarded**. Then you place the deployed card on the board.
+2. **Squad pop-up (2 cards):** **play** one now or **hold** it in your hand (max 3). The other is discarded. You can play **one** squad card per turn, the offered one or one from your hand (the hand is always shown under the board).
+3. **Move up to 3 units**, one tile each (forward or sideways). Only units that were already on the board when your turn began can move; anything you place this turn is *new*. Rogues move 2 tiles. *Swift* units (Champion) don't use up one of the 3 moves.
 4. **Attack:** every unit may attack once per turn, for free.
 
-Anything left in your offers when you end the turn is discarded. When a deck runs out, its own discard pile is shuffled into a new deck, so discarding means "not this lap" and nothing is lost for good. Running out of cards is never a loss; the only win is destroying the enemy castle.
+Anything left in your offers when you end the turn is discarded. When a deck runs out, its own discard pile is shuffled into a new deck. Running out is never a loss; the only win is destroying the enemy castle.
+
+## Rogues and traps (infantry, 6 of the 36 cards)
+Rogues have no attack, move up to 2 tiles, and may lay **one trap per turn** on an empty tile next to them. An enemy that steps onto a trap springs it (the trap is used up). You can't step on your own traps. Each player keeps at most 5 traps; the oldest vanishes.
+| Rogue | Trap | Effect on the unit that triggers it |
+|---|---|---|
+| Poisoner | ☠ Poison | 1 damage at the start of each of its owner's next 2 turns |
+| Trapper | 🕸 Sticky | can't move on its owner's next turn |
+| Saboteur | ✦ Flash | can't attack on its owner's next turn |
 
 ## Reach (three shapes, from the design sketch)
 Forward is toward the enemy castle.

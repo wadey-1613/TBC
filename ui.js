@@ -1,22 +1,25 @@
 (function () {
   'use strict';
   const E = window.TBC;
-  const { CARDS, SYM, SUIT_ROLE, CLS_SYM, ROWS, COLS, HAND_MAX, newGame, legalActions, applyAction, sameRef, locEq, isKing, AI } = E;
+  const { CARDS, SYM, SUIT_ROLE, CLS_SYM, TRAPS, ROWS, COLS, HAND_MAX, newGame, legalActions, applyAction, sameRef, locEq, isKing, AI } = E;
   const ME = 0;
   const $ = (id) => document.getElementById(id);
   let state = null, pending = null, legal = [], aiRunning = false;
   let prevUnits = new Map(), changes = new Map(), deaths = new Map(), reachSet = new Set();
+  // pop-up progress for the current turn
+  let flagTurn = -1, infDone = false, squadDone = false, squadForce = false, infPick = { deploy: null, recycle: null }, sqSel = null;
 
   // ------------------------------------------------------------ selection logic
-  // pending = partial action: { hand?, deploy?, from?, cell?, target? }. Legal actions are filtered by it.
+  // pending = partial action: { hand?, deploy?, from?, mode?, cell?, target? }. Legal actions are filtered by it.
   function fieldsMatch(a, pd) {
     return (pd.deploy === undefined || (a.t === 'deploy' && a.pick === pd.deploy)) &&
       (pd.hand === undefined || (a.t === 'play' && a.hand === pd.hand)) &&
-      (pd.from === undefined || locEq(a.from, pd.from)) &&
+      (pd.from === undefined || (locEq(a.from, pd.from) && ((pd.mode === 'trap') === (a.t === 'trap')))) &&
       (pd.cell === undefined || locEq(a.cell, pd.cell)) &&
       (pd.target === undefined || sameRef(a.target, pd.target));
   }
-  const remaining = () => legal.filter((a) => a.t !== 'end' && a.t !== 'hold' && a.t !== 'recycle' && (!pending || fieldsMatch(a, pending)));
+  const CHOICE = ['deploy', 'play', 'move', 'attack', 'trap'];
+  const remaining = () => legal.filter((a) => CHOICE.includes(a.t) && (!pending || fieldsMatch(a, pending)));
   const complete = (a, pd) => (a.cell === undefined || pd.cell !== undefined) && (a.target === undefined || pd.target !== undefined);
   const myTurn = () => state.active === ME && !aiRunning && state.winner == null;
 
@@ -37,13 +40,6 @@
     if (!legal.some((a) => a.t === 'play' && a.hand === i)) { pending = null; return render(); }
     pending = pending && pending.hand === i ? null : { hand: i };
     tryExecute(); // boosts with no choices fire immediately
-  }
-
-  function onInfantry(pick) {
-    if (!myTurn()) return;
-    if (!legal.some((a) => a.t === 'deploy' && a.pick === pick)) { pending = null; return render(); }
-    pending = pending && pending.deploy === pick ? null : { deploy: pick };
-    render();
   }
 
   function onTile(ref) {
@@ -87,24 +83,24 @@
 
   function showMenu() {
     $('overlayBox').innerHTML = `<h1>King's Table</h1>
-      <p>March up the table and take the enemy castle.<br>Each turn: pick from 3 infantry and 2 squad cards, then move and fight.</p><button id="go">Start game</button>`;
+      <p>March up the table and take the enemy castle.<br>Each turn a pop-up offers 3 infantry and 2 squad cards. Pick, then move and fight.</p><button id="go">Start game</button>`;
     $('overlay').classList.add('show');
     $('go').onclick = start;
   }
 
   function start() {
     state = newGame((Math.random() * 2 ** 31) | 0);
-    pending = null; aiRunning = false; prevUnits = new Map();
+    pending = null; aiRunning = false; prevUnits = new Map(); flagTurn = -1;
     $('overlay').classList.remove('show');
     render();
   }
 
-  // ------------------------------------------------------------ rendering
+  // ------------------------------------------------------------ rendering helpers
   const red = (suit) => suit === 'H' || suit === 'D';
-  const REACH = { melee: 'melee · 8 around', range: 'range · 2nd & 3rd row ahead', defence: 'defence · front arc' };
+  const REACH = { melee: 'melee · 8 around', range: 'range · 2nd & 3rd row ahead', defence: 'defence · front arc', none: 'cannot attack · moves 2' };
   const kwText = (c) => (c.kind === 'spell' ? c.kw : [REACH[c.reach]].concat(c.kw)).join(' · ');
 
-  // attack / armour / health pills. `now` is the live unit (or null for a card in hand)
+  // attack / armour / health pills. `now` is the live unit (or null for a card)
   function statsHtml(id, now) {
     const c = CARDS[id];
     const atk = now ? now.atk : c.atk, arm = now ? now.armor : c.armor, hp = now ? now.hp : c.hp, max = now ? now.maxHp : c.hp;
@@ -115,7 +111,17 @@
 
   function barHtml(p) {
     const pl = state.players[p], k = E.kingOf(state, p);
-    return `<b>${p === ME ? 'You' : 'Opponent'}</b><span>Castle <b>♥${k.hp}/${k.maxHp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span>Moves <b>${pl.moves}</b></span><span>Squad deck <b>${pl.deck.length}</b></span><span>Infantry <b>${pl.infDeck.length}</b></span><span class="grow"></span>${state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
+    return `<b>${p === ME ? 'You' : 'Opponent'}</b><span>Castle <b>♥${k.hp}/${k.maxHp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span>Moves <b>${pl.moves}</b></span>`
+      + `<span>Squad deck <b>${pl.deck.length}</b>/${pl.squadDiscard.length}</span><span>Infantry <b>${pl.infDeck.length}</b>/${pl.infDiscard.length}</span>`
+      + `<span class="grow"></span>${state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
+  }
+
+  function statusText(u) {
+    const s = [];
+    if (u.poison > 0) s.push('☠' + u.poison);
+    if (u.stuck > 0 || u.immobile) s.push('🕸');
+    if (u.blind > 0 || u.disarmed) s.push('✦');
+    return s.join(' ');
   }
 
   function tileHtml(r, c, rem) {
@@ -124,8 +130,11 @@
     const home = r === 0 ? ' home0' : r === ROWS - 1 ? ' home1' : '';
     const ko = deaths.has(r * COLS + c);
     const attrs = `class="cell${home}${isDest ? ' dest' : ''}${reachSet.has(r * COLS + c) ? ' reach' : ''}${ko ? ' ko' : ''}" data-r="${r}" data-c="${c}"`;
-    const ghost = ko && !u ? '<div class="float dead">✖</div>' : '';
-    if (!u) return `<div ${attrs}>${ghost}</div>`;
+    if (!u) {
+      const t = E.trapAt(state, r, c);
+      const trap = t ? `<div class="trap p${t.p}" title="${t.p === ME ? 'Your' : 'Enemy'} ${TRAPS[t.type].name}: ${TRAPS[t.type].text}">${TRAPS[t.type].sym}</div>` : '';
+      return `<div ${attrs}>${trap}${ko ? '<div class="float dead">✖</div>' : ''}</div>`;
+    }
     const k = CARDS[u.id], delta = changes.get(u.uid) || 0;
     const isTarget = pending !== null && pending.target === undefined && rem.some((a) => a.target && sameRef(a.target, ref));
     const ready = u.p === ME && !pending && myTurn() && legal.some((a) => a.from && locEq(a.from, ref));
@@ -137,8 +146,9 @@
     const stats = isKing(u)
       ? `<div class="stats"><span class="pill h${u.hp < u.maxHp ? ' hurt' : ''}">♥${u.hp}/${u.maxHp}</span><span class="pill ar${u.armor ? '' : ' zero'}">🛡${u.armor}</span></div>`
       : statsHtml(u.id, u);
+    const tl = [u.fresh ? 'NEW' : '', statusText(u)].filter(Boolean).join(' ');
     const num = delta ? `<div class="float ${delta < 0 ? 'dmg' : 'heal'}">${delta > 0 ? '+' : ''}${delta}</div>` : '';
-    return `<div ${attrs}><div class="${cls}" title="${title}"><span class="rk">${rk}</span>${u.fresh ? '<span class="new">new</span>' : ''}<div class="nm">${k.name}</div>`
+    return `<div ${attrs}><div class="${cls}" title="${title}"><span class="rk">${rk}</span>${tl ? `<span class="tl">${tl}</span>` : ''}<div class="nm">${k.name}</div>`
       + `<div class="hpbar"><i class="${barCls}" style="width:${Math.round(ratio * 100)}%"></i></div>${stats}</div>${num}</div>`;
   }
 
@@ -158,7 +168,7 @@
   function boardHtml() {
     const rem = pending ? remaining() : [];
     reachSet = new Set();
-    if (pending && pending.from) E.reachTiles(state, pending.from.r, pending.from.c).forEach((t) => reachSet.add(t.r * COLS + t.c));
+    if (pending && pending.from && pending.mode !== 'trap') E.reachTiles(state, pending.from.r, pending.from.c).forEach((t) => reachSet.add(t.r * COLS + t.c));
     let html = '';
     for (let r = ROWS - 1; r >= 0; r--) for (let c = 0; c < COLS; c++) html += tileHtml(r, c, rem);
     return html;
@@ -166,29 +176,74 @@
 
   function cardHtml(id, opts) {
     const c = CARDS[id];
-    const cls = ['card', c.inf ? 'inf' : c.suit, opts.playable ? 'playable' : 'dim', opts.selected ? 'selected' : ''].join(' ');
+    const cls = ['card', opts.big ? 'big' : '', c.inf ? 'inf' : c.suit, opts.playable ? 'playable' : 'dim', opts.selected ? 'selected' : ''].join(' ');
     const top = c.inf ? CLS_SYM[c.cls] : `${c.rank}${SYM[c.suit]}`;
     const type = c.inf ? `${c.cls} infantry` : `${c.kind === 'spell' ? 'Boost' : 'Unit'} · ${SUIT_ROLE[c.suit]}`;
-    return `<div class="${cls}" ${opts.attr}><div class="top ${red(c.suit) ? 'red' : ''}">${top}</div><div class="nm">${c.name}</div>
+    const ribbon = opts.role ? `<div class="ribbon ${opts.role}">${opts.role.toUpperCase()}</div>` : '';
+    return `<div class="${cls}" ${opts.attr || ''}>${ribbon}<div class="top ${red(c.suit) ? 'red' : ''}">${top}</div><div class="nm">${c.name}</div>
       <div class="ty">${type}</div><div class="tags">${kwText(c)}</div><div class="tx">${c.text}</div>${c.kind === 'unit' ? statsHtml(id, null) : '<div class="stats"></div>'}</div>`;
-  }
-
-  function offersHtml() {
-    const pl = state.players[ME], can = myTurn();
-    let inf = pl.infOffer.map((id, i) => `<div class="cwrap">${cardHtml(id, { playable: can && legal.some((a) => a.t === 'deploy' && a.pick === i), selected: pending && pending.deploy === i, attr: `data-inf="${i}"` })}`
-      + `<button class="small alt" data-recycle="${i}" ${can && legal.some((a) => a.t === 'recycle' && a.pick === i) ? '' : 'disabled'}>↺ Recycle</button></div>`).join('');
-    if (!pl.infOffer.length) inf = `<div class="card empty" style="grid-column:span 3;height:60px">${pl.infDeck.length || pl.infDiscard.length ? 'Infantry offer used' : 'No infantry left'}</div>`;
-    let squad = pl.squadOffer.map((id, k) => `<div class="cwrap">${cardHtml(id, { playable: can && legal.some((a) => a.t === 'play' && a.hand === -1 - k), selected: pending && pending.hand === -1 - k, attr: `data-hand="${-1 - k}"` })}`
-      + `<button class="small alt" data-hold="${k}" ${can && legal.some((a) => a.t === 'hold' && a.pick === k) ? '' : 'disabled'}>Hold in hand</button></div>`).join('');
-    if (!pl.squadOffer.length) squad = '<div class="card empty" style="grid-column:span 3;height:60px">Squad offer used</div>';
-    return { inf, squad };
   }
 
   function handHtml() {
     const pl = state.players[ME];
     let html = pl.hand.map((id, i) => cardHtml(id, { playable: myTurn() && legal.some((a) => a.t === 'play' && a.hand === i), selected: pending && pending.hand === i, attr: `data-hand="${i}"` })).join('');
-    for (let i = pl.hand.length; i < HAND_MAX; i++) html += '<div class="card empty">empty</div>';
+    for (let i = pl.hand.length; i < HAND_MAX; i++) html += '<div class="card empty">empty hand slot</div>';
     return html;
+  }
+
+  // ------------------------------------------------------------ pop-ups (infantry, then squad)
+  const canDeploy = () => legal.some((a) => a.t === 'deploy');
+
+  function infantryPicker() {
+    const pl = state.players[ME], n = pl.infOffer.length, dep = canDeploy();
+    const needRecycle = pl.recycles > 0 && n - (dep ? 1 : 0) >= 1;
+    const { deploy, recycle } = infPick;
+    const ready = (!dep || deploy !== null) && (!needRecycle || recycle !== null);
+    let step = 'Click the infantry you want to deploy.';
+    if (!dep) step = 'There is no room to deploy. Click one to recycle.';
+    else if (deploy !== null && needRecycle && recycle === null) step = 'Now click one to recycle to the bottom of your deck.';
+    else if (ready) step = 'The last card is discarded. Confirm, then place the infantry on your back row.';
+    const cards = pl.infOffer.map((id, i) => {
+      const role = i === deploy ? 'deploy' : i === recycle ? 'recycle' : ready ? 'discard' : '';
+      return cardHtml(id, { big: true, playable: true, selected: i === deploy || i === recycle, role, attr: `data-ipick="${i}"` });
+    }).join('');
+    $('pickerBox').innerHTML = `<h2>Choose your infantry</h2><p>${step}</p><div class="pickrow">${cards}</div>`
+      + `<div class="btnrow"><button id="infRedo" class="alt" ${deploy === null && recycle === null ? 'disabled' : ''}>Start again</button><button id="infOk" ${ready ? '' : 'disabled'}>Confirm</button></div>`;
+  }
+
+  function squadPicker() {
+    const pl = state.players[ME];
+    const cards = pl.squadOffer.map((id, k) => {
+      const canPlay = legal.some((a) => a.t === 'play' && a.hand === -1 - k), canHold = legal.some((a) => a.t === 'hold' && a.pick === k);
+      const sel = sqSel === k;
+      return `<div class="pickcol">${cardHtml(id, { big: true, playable: true, selected: sel, attr: `data-sq="${k}"` })}`
+        + (sel ? `<button data-sqplay="${k}" ${canPlay ? '' : 'disabled'}>Play now</button><button class="alt" data-sqhold="${k}" ${canHold ? '' : 'disabled'}>${canHold ? 'Hold in hand' : 'Hand is full'}</button>` : '') + '</div>';
+    }).join('');
+    $('pickerBox').innerHTML = `<h2>Choose a squad card</h2><p>Play one now or hold it in your hand (max 3). The other is discarded.</p><div class="pickrow">${cards}</div>`
+      + `<div class="btnrow"><button class="alt small" id="sqLater">Decide later</button><button class="alt small" id="sqDiscard">Discard both</button></div>`;
+  }
+
+  function renderPicker() {
+    const pl = state.players[ME];
+    let mode = null;
+    if (myTurn()) {
+      const infResolved = pl.infOffer.length === 0 || !canDeploy();
+      if (!infDone && pl.infOffer.length > 0) mode = 'inf';
+      else if (pl.squadOffer.length > 0 && !squadDone && (infResolved || squadForce) && !pending) mode = 'squad';
+    }
+    $('picker').classList.toggle('show', mode !== null);
+    if (mode === 'inf') infantryPicker();
+    else if (mode === 'squad') squadPicker();
+  }
+
+  function confirmInfantry() {
+    const pl = state.players[ME], { deploy, recycle } = infPick;
+    const moves = [];
+    pl.infOffer.forEach((id, i) => { if (i !== deploy) moves.push({ i, t: i === recycle ? 'recycle' : 'discardInf' }); });
+    moves.sort((a, b) => b.i - a.i).forEach((m) => applyAction(state, { t: m.t, pick: m.i }));
+    infDone = true; infPick = { deploy: null, recycle: null };
+    pending = deploy !== null ? { deploy: 0 } : null;
+    render();
   }
 
   function hint() {
@@ -197,34 +252,38 @@
     if (state.active !== ME) return 'Opponent is thinking…';
     if (!pending) {
       const bits = [];
-      if (pl.deploys > 0 && pl.infOffer.length) bits.push('pick an infantry to deploy');
-      if (pl.recycles > 0 && pl.infOffer.length) bits.push('recycle one');
-      if (pl.squadOffer.length) bits.push('play or hold a squad card');
-      return 'Your turn: ' + (bits.length ? bits.join(', ') + '. ' : '') + 'Select a green unit to move or attack (' + pl.moves + ' move' + (pl.moves === 1 ? '' : 's') + ' left). Unused offers are discarded when you end the turn.';
+      if (pl.infOffer.length && infDone && canDeploy()) bits.push('place your infantry');
+      return 'Your turn: ' + (bits.length ? bits.join(', ') + '. ' : '') + 'Select a green unit to move or attack (' + pl.moves + ' move' + (pl.moves === 1 ? '' : 's') + ' left), or play a card from your hand.';
     }
-    if (pending.deploy !== undefined) return 'Choose a tile on your back row.';
+    if (pending.deploy !== undefined) return 'Choose a tile for the infantry. Defence units can go within 2 tiles of your king.';
     if (pending.hand !== undefined) {
       const needCell = remaining().some((a) => a.cell !== undefined);
-      return needCell && pending.cell === undefined ? 'Choose a tile on your back row.' : 'Choose a target.';
+      return needCell && pending.cell === undefined ? 'Choose a tile for it. Defence units can go within 2 tiles of your king.' : 'Choose a target.';
     }
-    return 'The shaded tiles are this unit\'s reach. Click an enemy in reach (gold) to attack, or an empty tile to move (forward or sideways).';
+    if (pending.mode === 'trap') return 'Choose an empty tile next to the rogue for the trap.';
+    return 'The shaded tiles are this unit\'s reach. Click an enemy in reach (gold) to attack, or an empty tile to move.';
   }
 
   function render() {
+    if (state.turn !== flagTurn) { flagTurn = state.turn; infDone = false; squadDone = false; squadForce = false; infPick = { deploy: null, recycle: null }; sqSel = null; }
     legal = state.active === ME && state.winner == null ? legalActions(state) : [];
+    const pl = state.players[ME];
+    if (infDone && pl.recycles > 0 && pl.infOffer.length >= 2 && !pending) { infDone = false; infPick = { deploy: null, recycle: null }; }   // Reinforcements: a second offer
     trackChanges();
     $('board').innerHTML = boardHtml();
     $('foeBar').innerHTML = barHtml(1 - ME);
     $('myBar').innerHTML = barHtml(ME);
-    const o = offersHtml();
-    $('infantry').innerHTML = o.inf;
-    $('squad').innerHTML = o.squad;
     $('hand').innerHTML = handHtml();
-    const pl = state.players[ME];
-    $('infInfo').textContent = `deck ${pl.infDeck.length} · discarded ${pl.infDiscard.length}`;
-    $('squadInfo').textContent = `deck ${pl.deck.length} · discarded ${pl.squadDiscard.length}`;
     $('hint').textContent = hint();
     $('endBtn').disabled = !myTurn();
+    const sel = pending && pending.from && state.board[pending.from.r][pending.from.c];
+    $('trapBtn').hidden = !(myTurn() && sel && legal.some((a) => a.t === 'trap' && locEq(a.from, pending.from)));
+    $('trapBtn').textContent = pending && pending.mode === 'trap' ? 'Cancel trap' : 'Lay trap';
+    const placeable = myTurn() && infDone && pl.infOffer.length > 0 && canDeploy() && !pending;
+    $('placeBtn').hidden = !placeable;
+    if (placeable) $('placeBtn').textContent = 'Place ' + CARDS[pl.infOffer[0]].name;
+    $('offerBtn').hidden = !(myTurn() && pl.squadOffer.length > 0 && squadDone);
+    renderPicker();
     const logEl = $('log');
     logEl.innerHTML = state.log.map((l) => `<div>${l}</div>`).join('');
     logEl.scrollTop = logEl.scrollHeight;
@@ -232,18 +291,35 @@
 
   // ------------------------------------------------------------ events
   document.addEventListener('click', (e) => {
-    const rec = e.target.closest('[data-recycle]');
-    if (rec) { if (myTurn() && !rec.disabled) run({ t: 'recycle', pick: +rec.dataset.recycle }); return; }
-    const hold = e.target.closest('[data-hold]');
-    if (hold) { if (myTurn() && !hold.disabled) run({ t: 'hold', pick: +hold.dataset.hold }); return; }
-    const hand = e.target.closest('[data-hand]');
+    const t = e.target;
+    const ip = t.closest('[data-ipick]');
+    if (ip) {
+      const i = +ip.dataset.ipick, dep = canDeploy(), need = state.players[ME].recycles > 0;
+      if (i === infPick.deploy) infPick.deploy = null;
+      else if (i === infPick.recycle) infPick.recycle = null;
+      else if (dep && infPick.deploy === null) infPick.deploy = i;
+      else if (need && infPick.recycle === null) infPick.recycle = i;
+      return render();
+    }
+    if (t.closest('#infRedo')) { infPick = { deploy: null, recycle: null }; return render(); }
+    if (t.closest('#infOk')) return confirmInfantry();
+    const sq = t.closest('[data-sq]');
+    if (sq) { sqSel = +sq.dataset.sq === sqSel ? null : +sq.dataset.sq; return render(); }
+    const sp = t.closest('[data-sqplay]');
+    if (sp) { const k = +sp.dataset.sqplay; squadDone = true; sqSel = null; pending = { hand: -1 - k }; return tryExecute(); }
+    const sh = t.closest('[data-sqhold]');
+    if (sh) { squadDone = true; const k = +sh.dataset.sqhold; sqSel = null; return run({ t: 'hold', pick: k }); }
+    if (t.closest('#sqLater')) { squadDone = true; sqSel = null; return render(); }
+    if (t.closest('#sqDiscard')) { squadDone = true; sqSel = null; [1, 0].forEach((i) => { if (state.players[ME].squadOffer[i] !== undefined) applyAction(state, { t: 'discardSquad', pick: i }); }); return render(); }
+    const hand = t.closest('[data-hand]');
     if (hand) return onHand(+hand.dataset.hand);
-    const inf = e.target.closest('[data-inf]');
-    if (inf) return onInfantry(+inf.dataset.inf);
-    const cell = e.target.closest('.cell');
+    const cell = t.closest('.cell');
     if (cell) return onTile({ r: +cell.dataset.r, c: +cell.dataset.c });
   });
   $('endBtn').onclick = () => { if (myTurn()) run({ t: 'end' }); };
+  $('trapBtn').onclick = () => { if (pending && pending.from) { pending = { from: pending.from, mode: pending.mode === 'trap' ? undefined : 'trap' }; render(); } };
+  $('placeBtn').onclick = () => { pending = { deploy: 0 }; render(); };
+  $('offerBtn').onclick = () => { squadDone = false; squadForce = true; pending = null; render(); };
   const cancel = () => { pending = null; if (state) render(); };
   document.addEventListener('contextmenu', (e) => { e.preventDefault(); cancel(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancel(); });
