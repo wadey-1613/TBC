@@ -6,6 +6,7 @@
  * Per turn:  you are offered 3 infantry: deploy 1 (free, appears on your back row), recycle 1 to the
  *            bottom of the infantry deck, and the third is discarded for good
  *            you are offered 2 squad cards: use 1 (play it, or hold it in your hand, max 3), the other is discarded
+ *            a deck that runs out is rebuilt by shuffling its own discard pile; the only win is the enemy castle
  *            play at most 1 squad card per turn (the offered one or one from hand)
  *            move up to 3 different units one step each (forward or sideways), but only units that were
  *            already on the board when your turn began; anything placed this turn is 'fresh' and can't move
@@ -14,7 +15,7 @@
 (function (root) {
   'use strict';
 
-  const ROWS = 9, COLS = 7, KING_C = 3, KING_HP = 30, HAND_MAX = 3, MOVES = 3;
+  const ROWS = 9, COLS = 7, KING_C = 3, KING_HP = 30, HAND_MAX = 3, MOVES = 3, MAX_TURNS = 300;
   const SYM = { S: '♠', C: '♣', D: '♦', H: '♥' };
   const SUIT_ROLE = { S: 'Defence', C: 'Offence', D: 'Siege', H: 'Long range' };
   const CLS_SYM = { melee: '⚔', ranged: '➶', defence: '▣' };
@@ -204,18 +205,21 @@
     return state;
   }
 
-  function loseBy(state, p, why) {
-    if (state.winner != null) return;
-    state.winner = 1 - p;
-    state.reason = why;
-    log(state, why);
+  // when a deck is empty, shuffle that player's discard pile back in as the new deck
+  function refill(state, p, deckKey, discardKey) {
+    const pl = state.players[p];
+    if (!pl[deckKey].length && pl[discardKey].length) {
+      pl[deckKey] = shuffle(state, pl[discardKey].splice(0));
+      log(state, `Player ${p + 1} shuffles ${pl[deckKey].length} discarded ${deckKey === 'deck' ? 'squad' : 'infantry'} cards into a new deck.`);
+    }
+    return pl[deckKey].length > 0;
   }
 
   function drawToHand(state, p) {
     const pl = state.players[p];
-    if (!pl.deck.length) return loseBy(state, p, `Player ${p + 1} ran out of squad cards.`);
+    if (!refill(state, p, 'deck', 'squadDiscard')) return;
     const id = pl.deck.pop();
-    if (pl.hand.length >= HAND_MAX) log(state, `Player ${p + 1}'s hand is full; ${CARDS[id].name} is discarded.`);
+    if (pl.hand.length >= HAND_MAX) { pl.squadDiscard.push(id); log(state, `Player ${p + 1}'s hand is full; ${CARDS[id].name} is discarded.`); }
     else pl.hand.push(id);
   }
 
@@ -228,14 +232,10 @@
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const u = state.board[r][c]; if (u && u.p === p) { u.attacked = false; u.moved = false; u.fresh = false; } }
     log(state, `— Turn ${state.turn}: Player ${p + 1} —`);
     pl.infOffer = [];
-    while (pl.infOffer.length < 3 && pl.infDeck.length) pl.infOffer.push(pl.infDeck.pop());
+    while (pl.infOffer.length < 3 && refill(state, p, 'infDeck', 'infDiscard')) pl.infOffer.push(pl.infDeck.pop());
     pl.squadOffer = [];
-    if (!pl.deck.length) loseBy(state, p, `Player ${p + 1} ran out of squad cards.`);
-    else {
-      pl.squadOffer.push(pl.deck.pop());
-      if (pl.deck.length) pl.squadOffer.push(pl.deck.pop());
-      log(state, `Player ${p + 1} is offered ${pl.infOffer.length} infantry and ${pl.squadOffer.map((id) => CARDS[id].name).join(' / ')}.`);
-    }
+    while (pl.squadOffer.length < 2 && refill(state, p, 'deck', 'squadDiscard')) pl.squadOffer.push(pl.deck.pop());
+    log(state, `Player ${p + 1} is offered ${pl.infOffer.length} infantry and ${pl.squadOffer.length ? pl.squadOffer.map((id) => CARDS[id].name).join(' / ') : 'no squad cards'}.`);
     cleanup(state);
   }
 
@@ -245,6 +245,7 @@
     if (pl.squadOffer.length) { pl.squadDiscard.push(...pl.squadOffer); log(state, `${pl.squadOffer.map((id) => CARDS[id].name).join(' / ')} discarded.`); pl.squadOffer = []; }
     state.active = 1 - state.active;
     state.turn++;
+    if (state.turn > MAX_TURNS && state.winner == null) { state.winner = 2; state.reason = 'Stalemate: nobody took the castle.'; log(state, state.reason); return; }
     startTurn(state);
   }
 

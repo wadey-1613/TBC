@@ -208,13 +208,23 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
   s2.players[0].hand = ['H9'];
   assert.strictEqual(acts(s2, 'play').length, 0, 'no unit of mine reaches either enemy');
 }
-{ // squad deck-out loses
+{ // an empty deck is rebuilt from its own discard pile; running out is never a loss
   const s = fresh();
-  s.players[1].deck = [];
+  s.players[1].deck = []; s.players[1].squadDiscard = ['DA', 'D2', 'D3'];
+  s.players[1].infDeck = []; s.players[1].infDiscard = ['iSword', 'iBrute', 'iSpear', 'iArcher'];
   E.applyAction(s, { t: 'end' });
-  assert.strictEqual(s.winner, 0);
+  assert.strictEqual(s.winner, null, 'no deck-out loss');
+  assert.strictEqual(s.players[1].squadOffer.length, 2, 'squad offer rebuilt from the discard pile');
+  assert.strictEqual(s.players[1].deck.length, 1);
+  assert.strictEqual(s.players[1].infOffer.length, 3, 'infantry offer rebuilt from the discard pile');
+  assert.strictEqual(s.players[1].infDiscard.length, 0);
+  const s2 = fresh();
+  s2.players[1].deck = []; s2.players[1].squadDiscard = []; s2.players[1].infDeck = []; s2.players[1].infDiscard = [];
+  E.applyAction(s2, { t: 'end' });
+  assert.strictEqual(s2.winner, null, 'even with nothing left, the game goes on');
+  assert.strictEqual(s2.players[1].squadOffer.length + s2.players[1].infOffer.length, 0);
+  assert(acts(s2, 'move').length >= 0);
 }
-
 // --- playouts
 let wins = [0, 0, 0];
 for (let seed = 1; seed <= 100; seed++) wins[play(seed, randomPick(rng(seed))).winner]++;
