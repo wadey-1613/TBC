@@ -52,7 +52,11 @@
   .bar b { color:var(--text); } .bar .grow { flex:1; }
   .active-badge { color:var(--gold); font-weight:700; }
   #actrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-  #speedLbl { font-size:11px; color:var(--dim); } #speedLbl select { background:#10131b; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:3px; }
+  #oppCtl { display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:var(--panel); border-radius:8px; padding:6px 10px; font-size:11px; color:var(--dim); }
+  #oppCtl b { color:var(--text); } #oppCtl select { background:#10131b; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:3px; }
+  .think { color:var(--gold); font-weight:700; } .dots i { font-style:normal; animation:dot 1.2s infinite; opacity:.2; } .dots i:nth-child(2) { animation-delay:.2s; } .dots i:nth-child(3) { animation-delay:.4s; }
+  @keyframes dot { 0%,60%,100% { opacity:.2; } 30% { opacity:1; } }
+  .notetag { position:absolute; top:-1px; right:-1px; background:#3a4560; color:var(--text); font-size:9px; font-weight:800; padding:2px 6px; border-radius:0 7px 0 7px; text-transform:uppercase; z-index:2; }
   #hint { color:var(--dim); flex:1; min-width:200px; }
   #hand { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
   .card { height:132px; background:linear-gradient(#303853,#232a3d); border:2px solid var(--line); border-top:5px solid var(--line); border-radius:9px; padding:4px 6px; display:flex; flex-direction:column; gap:2px; min-width:0; position:relative; }
@@ -105,16 +109,17 @@
     <div id="foeBar" class="bar"></div>
     <div id="board"></div>
     <div id="myBar" class="bar"></div>
-    <div id="actrow"><span id="hint"></span><button id="trapBtn" class="alt small" hidden>Lay trap</button><button id="placeBtn" class="alt small" hidden></button><button id="offerBtn" class="alt small" hidden>Squad offer</button><button id="skipBtn" class="alt small" hidden>Skip opponent</button><label id="speedLbl">Opponent speed <select id="aiSpeed"><option value="normal">Normal</option><option value="fast">Fast</option><option value="instant">Instant</option></select></label><button id="endBtn">End turn</button></div>
+    <div id="actrow"><span id="hint"></span><button id="trapBtn" class="alt small" hidden>Lay trap</button><button id="placeBtn" class="alt small" hidden></button><button id="offerBtn" class="alt small" hidden>Squad offer</button><button id="endBtn">End turn</button></div>
     <div id="hand"></div>
   </div>
   <div id="side">
+    <div id="oppCtl"><b>Opponent</b><label>speed <select id="aiSpeed"><option value="normal">Normal</option><option value="fast">Fast</option><option value="instant">Instant</option></select></label><label>thinking <select id="aiThink"><option value="turn">1–10 s each turn</option><option value="action">1–10 s before every action</option><option value="off">Off</option></select></label><button id="skipBtn" class="alt small" hidden>Skip opponent</button></div>
     <div id="log"></div>
     <div id="rec"><textarea id="noteBox" rows="2" placeholder="Anything odd, unfair or boring? Note it here and press Save note. It is stored with this game."></textarea><div id="recRow"><button id="noteBtn" class="alt small">Save note</button><span id="recStatus"></span></div></div>
     <div id="help">
       <b>Goal:</b> march up the table and destroy the enemy castle (king). Yours is at the bottom.<br>
       <b>Each turn:</b> a pop-up offers <b>3 infantry</b>: deploy one (free), recycle one to the bottom of the deck, or hold one in your hand. Anything left is discarded. Then <b>2 squad cards</b>: play one now or hold it in your hand, the other is discarded.
-      Your hand holds up to 3 cards (squad cards and infantry) and you can play <b>1 card from your hand per turn</b>. Playing the squad card you were just offered doesn't count. When a deck runs out, its discard pile is shuffled back in.<br>
+      Your hand holds up to 3 cards (squad cards and infantry) and you can play <b>1 card from your hand per turn</b>. Playing the squad card you were just offered doesn't count, and a card you put into your hand this turn can't be played until your next turn. When a deck runs out, its discard pile is shuffled back in.<br>
       <b>Move</b> up to 3 units a step each (forward or sideways), but only units on the board when your turn began. Every unit may attack once.
       New cards appear on your back row. <b>Defence</b> units (▣ and ♠) can also go anywhere within 2 tiles of your king.<br>
       <b>Rogues 🗡</b> can't attack. They move 2 tiles and lay one trap a turn on an empty tile next to them. An enemy that steps on it springs it:

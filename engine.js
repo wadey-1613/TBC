@@ -8,7 +8,8 @@
  *            you are offered 2 squad cards: use 1 (play it, or hold it in your hand, max 3), the other is discarded
  *            infantry offers can also be HELD in your hand (shared hand of max 3)
  *            you may play 1 card from your hand per turn (a held squad card or a held infantry); playing the
- *            squad card you were offered this turn doesn't use that up
+ *            squad card you were offered this turn doesn't use that up. A card put into your hand this turn
+ *            (held or drawn) can't be played until your next turn
  *            move up to 3 different units (one step each; rogues two), but only units that were already on the
  *            board when your turn began; anything placed this turn is 'fresh' and can't move
  *            every unit may attack once (free); rogues can't attack but lay one trap each
@@ -258,7 +259,7 @@
     for (let r = 0; r < ROWS; r++) state.board.push(new Array(COLS).fill(null));
     for (let p = 0; p < 2; p++) {
       state.board[backRow(p)][KING_C] = { uid: ++state.uid, id: 'KING', p, atk: 0, hp: KING_HP, maxHp: KING_HP, armor: 0, attacked: true, moved: true, fresh: false, trapped: true, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false };
-      state.players.push({ deploys: 0, moves: 0, handLeft: 0, recycles: 0, infOfferId: 0, infOffer: [], squadOffer: [], deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [], infDiscard: [], squadDiscard: [] });
+      state.players.push({ deploys: 0, moves: 0, handLeft: 0, fresh: 0, recycles: 0, infOfferId: 0, infOffer: [], squadOffer: [], deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [], infDiscard: [], squadDiscard: [] });
     }
     startTurn(state);
     return state;
@@ -279,7 +280,7 @@
     if (!refill(state, p, 'deck', 'squadDiscard')) return;
     const id = pl.deck.pop();
     if (pl.hand.length >= HAND_MAX) { pl.squadDiscard.push(id); log(state, `Player ${p + 1}'s hand is full; ${CARDS[id].name} is discarded.`); }
-    else pl.hand.push(id);
+    else { pl.hand.push(id); pl.fresh++; }
   }
 
   function startTurn(state) {
@@ -287,6 +288,7 @@
     pl.deploys = 1;
     pl.moves = MOVES;
     pl.handLeft = 1;
+    pl.fresh = 0;                // the last `fresh` cards in your hand arrived this turn and can't be played yet
     pl.recycles = 1;
     pl.infOfferId++;
     log(state, `— Turn ${state.turn}: Player ${p + 1} —`);
@@ -438,7 +440,7 @@
     pl.squadOffer.forEach((id, pick) => acts.push({ t: 'discardSquad', pick }));
 
     {
-      const sources = pl.handLeft > 0 ? pl.hand.map((id, i) => ({ id, i })) : [];
+      const sources = pl.handLeft > 0 ? pl.hand.map((id, i) => ({ id, i })).filter((x) => x.i < pl.hand.length - pl.fresh) : [];
       pl.squadOffer.forEach((id, k) => sources.push({ id, i: -1 - k }));
       for (const { id, i } of sources) {
         const c = CARDS[id];
@@ -500,7 +502,7 @@
       log(state, `Player ${p + 1} recycles ${CARDS[id].name} to the bottom of the infantry deck.`);
     } else if (a.t === 'holdInf') {
       const id = pl.infOffer.splice(a.pick, 1)[0];
-      pl.hand.push(id);
+      pl.hand.push(id); pl.fresh++;
       log(state, `Player ${p + 1} holds ${CARDS[id].name} in hand.`);
     } else if (a.t === 'discardInf') {
       const id = pl.infOffer.splice(a.pick, 1)[0];
@@ -514,7 +516,7 @@
       const id = pl.squadOffer[a.pick];
       pl.squadDiscard.push(...pl.squadOffer.filter((x, k) => k !== a.pick));
       pl.squadOffer = [];
-      pl.hand.push(id);
+      pl.hand.push(id); pl.fresh++;
       log(state, `Player ${p + 1} holds ${CARDS[id].name}.`);
     } else if (a.t === 'play') {
       let id;
@@ -562,7 +564,7 @@
     return state;
   }
 
-  const VERSION = 'r10'; // bump whenever a rule or card changes: recorded games replay only on the version that recorded them
+  const VERSION = 'r11'; // bump whenever a rule or card changes: recorded games replay only on the version that recorded them
   const api = { VERSION, ROWS, COLS, KING_C, KING_HP, HAND_MAX, MOVES, DEFENCE_ZONE, MAX_TRAPS, SYM, SUIT_ROLE, CLS_SYM, TRAPS, CARDS, DECK, INF_DECK, newGame, legalActions, applyAction, clone, hasKw, suitOf, isKing, isInf, sameRef, locEq, backRow, dirOf, kingOf, inRange, reachTiles, attackTargets, spawnTiles, spawnTilesFor, moveDests, trapAt, unitAt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TBC = api;

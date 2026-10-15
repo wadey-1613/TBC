@@ -86,7 +86,7 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
 }
 { // squad offer: 2 cards, use one (play or hold), the other is discarded; hand max 3
   const s = fresh();
-  s.players[0].squadOffer = ['DA', 'D2']; s.players[0].hand = ['SA', 'S2'];
+  s.players[0].squadOffer = ['DA', 'D2']; s.players[0].hand = ['SA', 'S2']; s.players[0].fresh = 0;
   assert.strictEqual(acts(s, 'hold').length, 2, 'either offered card can be held');
   E.applyAction(s, acts(s, 'hold').find((a) => a.pick === 0));
   assert.deepStrictEqual(s.players[0].hand, ['SA', 'S2', 'DA']);
@@ -104,24 +104,36 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
   assert.strictEqual(s2.board[0].filter((u) => u && u.id === 'D2').length, 1);
   assert.deepStrictEqual(s2.players[0].squadDiscard, ['DA'], 'first offered card discarded');
 }
-{ // infantry can be held in hand (shared max 3) and played from hand once per turn
+{ // infantry can be held in hand (shared max 3); a card put in your hand this turn can't be played until next turn
   const s = E.newGame(5);
   const pl = s.players[0];
   const offer = pl.infOffer.slice();
   E.applyAction(s, E.legalActions(s).find((a) => a.t === 'holdInf' && a.pick === 2));
   assert.deepStrictEqual(pl.hand, [offer[2]], 'held infantry goes to the hand');
+  assert(!E.legalActions(s).some((a) => a.t === 'play' && a.hand >= 0), 'a card held this turn cannot be played this turn');
   E.applyAction(s, E.legalActions(s).find((a) => a.t === 'holdInf' && a.pick === 0));
   assert.strictEqual(pl.hand.length, 2);
   pl.hand.push('S2');
   assert(!E.legalActions(s).some((a) => a.t === 'holdInf'), 'a full hand cannot hold more infantry');
-  pl.hand = [offer[2], 'D2'];
+  E.applyAction(s, { t: 'end' }); E.applyAction(s, { t: 'end' });       // next turn: they are old enough to play
   const plays = E.legalActions(s).filter((a) => a.t === 'play' && a.hand === 0);
-  assert(plays.length > 0, 'held infantry can be played from hand onto the board');
+  assert(plays.length > 0, 'held infantry can be played from hand on a later turn');
   const dep = pl.deploys;
   E.applyAction(s, plays[0]);
   assert.strictEqual(pl.deploys, dep, 'playing it from hand does not use the deploy');
-  assert(s.board.flat().some((u) => u && u.fresh && u.id === offer[2]));
+  assert(s.board.flat().some((u) => u && u.fresh), 'it arrives as a new unit');
   assert(!E.legalActions(s).some((a) => a.t === 'play' && a.hand >= 0), 'one hand play per turn');
+}
+{ // a held squad card, and cards drawn into the hand, also wait a turn
+  const s = fresh();
+  s.players[0].squadOffer = ['DA', 'D2'];
+  E.applyAction(s, acts(s, 'hold')[0]);
+  assert(!acts(s, 'play').some((a) => a.hand >= 0), 'just-held squad card cannot be played');
+  const s2 = fresh();
+  s2.players[0].hand = ['H10']; s2.players[0].fresh = 0;
+  E.applyAction(s2, acts(s2, 'play').find((a) => a.hand === 0));        // Spyglass draws 2 into the hand
+  assert.strictEqual(s2.players[0].hand.length, 2);
+  assert.strictEqual(s2.players[0].fresh, 2, 'drawn cards are new this turn');
 }
 { // infantry offer: 3 cards, deploy one, recycle one to the bottom, discard the last
   const s = E.newGame(5);

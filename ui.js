@@ -100,26 +100,46 @@
     if (state.active !== ME) aiLoop();
   }
 
-  // The opponent's turn is replayed action by action so you can follow it. Small bookkeeping actions are quick,
-  // fights and card plays linger a little. Speed can be changed, and Skip finishes the turn at once.
+  // The opponent's turn is replayed action by action so you can follow it. Before it moves it "thinks" for a random
+  // 1-10 seconds (once per turn by default, or before every action). Small bookkeeping actions are quick, fights and
+  // card plays linger a little. Speed and thinking can be changed, and Skip finishes the turn at once.
   const AI_PACE = { attack: 360, play: 480, trap: 340, move: 200, deploy: 260, hold: 120, holdInf: 80, recycle: 80, discardInf: 40, discardSquad: 40, end: 120 };
   const AI_SPEED = { normal: 1, fast: 0.3, instant: 0 };
-  let aiSpeed = 'normal', aiSkip = false;
-  try { const saved = localStorage.getItem('tbc-ai-speed'); if (saved && saved in AI_SPEED) aiSpeed = saved; } catch (e) { /* storage unavailable */ }
+  const THINK_MODES = ['turn', 'action', 'off'];
+  let aiSpeed = 'normal', aiThinkMode = 'turn', aiSkip = false, aiThinking = false, thoughtThisTurn = false, thinkTimer = null, thinkResume = null;
+  try {
+    const sp = localStorage.getItem('tbc-ai-speed'), th = localStorage.getItem('tbc-ai-think');
+    if (sp && sp in AI_SPEED) aiSpeed = sp;
+    if (th && THINK_MODES.includes(th)) aiThinkMode = th;
+  } catch (e) { /* storage unavailable */ }
   const aiDelay = (a) => (aiSkip ? 0 : (AI_PACE[a.t] || 200) * AI_SPEED[aiSpeed]);
+  const thinkMs = () => 1000 + Math.random() * 9000;
+
+  // pause for a random 1-10 s before acting, if the settings call for it, then continue
+  function think(then) {
+    const wanted = !aiSkip && AI_SPEED[aiSpeed] > 0 && (aiThinkMode === 'action' || (aiThinkMode === 'turn' && !thoughtThisTurn));
+    thoughtThisTurn = true;
+    if (!wanted) return then();
+    aiThinking = true;
+    render();
+    thinkResume = () => { clearTimeout(thinkTimer); thinkTimer = null; thinkResume = null; aiThinking = false; then(); };
+    thinkTimer = setTimeout(thinkResume, thinkMs());
+  }
 
   function aiLoop() {
-    aiRunning = true; aiSkip = false;
+    aiRunning = true; aiSkip = false; aiThinking = false; thoughtThisTurn = false;
     $('skipBtn').hidden = false;
-    const finish = () => { aiRunning = false; aiSkip = false; $('skipBtn').hidden = true; saveGame(); render(); };
+    const finish = () => { aiRunning = false; aiSkip = false; aiThinking = false; $('skipBtn').hidden = true; saveGame(); render(); };
     const step = () => {
       if (state.winner != null || state.active === ME) return finish();
-      const a = AI.chooseAction(state);
-      doAction(a);
-      if (state.winner != null) { aiRunning = false; $('skipBtn').hidden = true; render(); return showEnd(); }
-      if (state.active === ME) return finish();           // the opponent ended its turn: hand control back immediately
-      render();
-      setTimeout(step, aiDelay(a));
+      think(() => {
+        const a = AI.chooseAction(state);
+        doAction(a);
+        if (state.winner != null) { aiRunning = false; aiThinking = false; $('skipBtn').hidden = true; render(); return showEnd(); }
+        if (state.active === ME) return finish();         // the opponent ended its turn: hand control back immediately
+        render();
+        setTimeout(step, aiDelay(a));
+      });
     };
     setTimeout(step, 150 * AI_SPEED[aiSpeed]);
   }
@@ -168,7 +188,7 @@
     const pl = state.players[p], k = E.kingOf(state, p);
     return `<b>${p === ME ? 'You' : 'Opponent'}</b><span>Castle <b>♥${k.hp}/${k.maxHp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span>Moves <b>${pl.moves}</b></span>`
       + `<span title="Traps on the board (max ${E.MAX_TRAPS} each)">Traps <b>${state.traps.filter((t) => t.p === p).length}</b>/${E.MAX_TRAPS}</span><span>Squad deck <b>${pl.deck.length}</b>/${pl.squadDiscard.length}</span><span>Infantry <b>${pl.infDeck.length}</b>/${pl.infDiscard.length}</span>`
-      + `<span class="grow"></span>${state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
+      + `<span class="grow"></span>${p !== ME && aiThinking ? '<span class="think">💭 thinking<span class="dots"><i>.</i><i>.</i><i>.</i></span></span>' : state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
   }
 
   function statusText(u) {
@@ -235,13 +255,14 @@
     const top = c.inf ? CLS_SYM[c.cls] : `${c.rank}${SYM[c.suit]}`;
     const type = c.inf ? `${c.cls} infantry` : `${c.kind === 'spell' ? 'Boost' : 'Unit'} · ${SUIT_ROLE[c.suit]}`;
     const ribbon = opts.role ? `<div class="ribbon ${opts.role}">${opts.role.toUpperCase()}</div>` : '';
-    return `<div class="${cls}" ${opts.attr || ''}>${ribbon}<div class="top ${red(c.suit) ? 'red' : ''}">${top}</div><div class="nm">${c.name}</div>
+    const note = opts.note ? `<div class="notetag">${opts.note}</div>` : '';
+    return `<div class="${cls}" ${opts.attr || ''}>${ribbon}${note}<div class="top ${red(c.suit) ? 'red' : ''}">${top}</div><div class="nm">${c.name}</div>
       <div class="ty">${type}</div><div class="tags">${kwText(c)}</div><div class="tx">${c.text}</div>${c.kind === 'unit' ? statsHtml(id, null) : '<div class="stats"></div>'}</div>`;
   }
 
   function handHtml() {
     const pl = state.players[ME];
-    let html = pl.hand.map((id, i) => cardHtml(id, { playable: myTurn() && legal.some((a) => a.t === 'play' && a.hand === i), selected: pending && pending.hand === i, attr: `data-hand="${i}"` })).join('');
+    let html = pl.hand.map((id, i) => cardHtml(id, { playable: myTurn() && legal.some((a) => a.t === 'play' && a.hand === i), selected: pending && pending.hand === i, attr: `data-hand="${i}"`, note: i >= pl.hand.length - pl.fresh ? 'plays next turn' : '' })).join('');
     for (let i = pl.hand.length; i < HAND_MAX; i++) html += '<div class="card empty">empty hand slot</div>';
     return html;
   }
@@ -317,7 +338,7 @@
   function hint() {
     const pl = state.players[ME];
     if (state.winner != null) return state.reason;
-    if (state.active !== ME) return 'Opponent is playing… (use Skip, or set the opponent speed, to go faster)';
+    if (state.active !== ME) return aiThinking ? 'Opponent is thinking about what to do next… (Skip opponent to hurry it up)' : 'Opponent is playing… (Skip opponent to finish its turn)';
     if (!pending) {
       const bits = [];
       if (pl.infOffer.length && infDone && canDeploy()) bits.push('place your infantry');
@@ -384,7 +405,9 @@
   $('noteBtn').onclick = () => { if (rec) { saveGame(); } };
   $('aiSpeed').value = aiSpeed;
   $('aiSpeed').onchange = () => { aiSpeed = $('aiSpeed').value; try { localStorage.setItem('tbc-ai-speed', aiSpeed); } catch (e) { /* ignore */ } };
-  $('skipBtn').onclick = () => { aiSkip = true; };
+  $('aiThink').value = aiThinkMode;
+  $('aiThink').onchange = () => { aiThinkMode = $('aiThink').value; try { localStorage.setItem('tbc-ai-think', aiThinkMode); } catch (e) { /* ignore */ } };
+  $('skipBtn').onclick = () => { aiSkip = true; if (thinkResume) thinkResume(); };
   $('endBtn').onclick = () => { if (myTurn()) run({ t: 'end' }); };
   $('trapBtn').onclick = () => { if (pending && pending.from) { pending = { from: pending.from, mode: pending.mode === 'trap' ? undefined : 'trap' }; render(); } };
   $('placeBtn').onclick = () => { pending = { deploy: 0 }; render(); };

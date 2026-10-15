@@ -10,7 +10,7 @@ Open `index.html` to play against the AI. `node test.js` runs rules tests and pl
 ## Per turn
 1. **Infantry pop-up (3 cards):** for each card choose **deploy** (free, you then place it on the board), **recycle** (to the bottom of the infantry deck, once a turn) or **hold** it in your hand. Anything you leave is **discarded**.
 2. **Squad pop-up (2 cards):** **play** one now or **hold** it in your hand. The other is discarded.
-   Your **hand** holds up to 3 cards (squad cards and infantry together) and is always shown under the board. You may play **one card from your hand per turn**. Playing the squad card you were just offered doesn't use that up, and neither does deploying infantry.
+   Your **hand** holds up to 3 cards (squad cards and infantry together) and is always shown under the board. You may play **one card from your hand per turn**. Playing the squad card you were just offered doesn't use that up, and neither does deploying infantry. **A card you put into your hand this turn (held or drawn) can't be played until your next turn.**
 3. **Move up to 3 units**, one tile each (forward or sideways). Only units that were already on the board when your turn began can move; anything you place this turn is *new*. Rogues move 2 tiles. *Swift* units (Champion) don't use up one of the 3 moves.
 4. **Attack:** every unit may attack once per turn, for free.
 
@@ -53,8 +53,8 @@ Destroy the enemy king (30 HP) on their back row. (A game that reaches turn 300 
 - **Infantry (36):** melee (Swordsman 2/2, Brute 3/1, Spearman 1/3), ranged (Archer 2/1, Slinger 1/2), defence (Shieldman 1/3, Guard 0/4, Pikeman 2/2, armour 1).
 - **Squad deck (52, standard suits):** ♦ Siege · ♠ Defence · ♣ Offence · ♥ Long range. Units and boosts mixed.
 
-## Opponent speed
-The AI takes about 9 actions a turn and they are replayed one by one so you can follow them. The **Opponent speed** setting (Normal / Fast / Instant, remembered in your browser) controls the pacing, and **Skip opponent** finishes its turn at once. Normal is about 2 seconds a turn.
+## Opponent pacing
+The AI takes about 9 actions a turn and they are replayed one by one so you can follow them. Before it moves it **thinks for a random 1-10 seconds** (a 💭 indicator shows). The side panel's **Opponent** settings (remembered in your browser) choose the pacing: *speed* (Normal / Fast / Instant) and *thinking* (once per turn, before every action, or off). **Skip opponent** ends the thinking and finishes its turn at once.
 
 ## Game records (for review)
 The published page records every game as the random seed plus each action either side took, and saves it to the page's database (`games/<id>`) after each round and when the game ends. The side panel has a note box that is stored with the game.
