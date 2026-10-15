@@ -77,6 +77,9 @@
   button:disabled { background:#3a3f4d; color:#7b8294; cursor:default; }
   #side { display:flex; flex-direction:column; gap:8px; min-width:0; position:sticky; top:10px; max-height:calc(100vh - 20px); }
   #log { height:260px; overflow:auto; font-size:11px; color:var(--dim); background:var(--panel); border-radius:8px; padding:8px; }
+  #rec { background:var(--panel); border-radius:8px; padding:8px; display:flex; flex-direction:column; gap:6px; }
+  #noteBox { width:100%; background:#10131b; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px; font:12px system-ui,sans-serif; resize:vertical; user-select:text; }
+  #recRow { display:flex; align-items:center; gap:8px; } #recStatus { font-size:11px; color:var(--dim); }
   #log div { padding:2px 0; border-bottom:1px solid #262c3b; }
   #help { font-size:11px; color:var(--dim); background:var(--panel); border-radius:8px; padding:8px 10px; overflow:auto; }
   #help pre { margin:4px 0; font:11px/1.2 ui-monospace,monospace; color:var(--text); }
@@ -106,6 +109,7 @@
   </div>
   <div id="side">
     <div id="log"></div>
+    <div id="rec"><textarea id="noteBox" rows="2" placeholder="Anything odd, unfair or boring? Note it here and press Save note. It is stored with this game."></textarea><div id="recRow"><button id="noteBtn" class="alt small">Save note</button><span id="recStatus"></span></div></div>
     <div id="help">
       <b>Goal:</b> march up the table and destroy the enemy castle (king). Yours is at the bottom.<br>
       <b>Each turn:</b> a pop-up offers <b>3 infantry</b>: deploy one (free), recycle one to the bottom of the deck, or hold one in your hand. Anything left is discarded. Then <b>2 squad cards</b>: play one now or hold it in your hand, the other is discarded.

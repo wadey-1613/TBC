@@ -53,5 +53,9 @@ Destroy the enemy king (30 HP) on their back row. (A game that reaches turn 300 
 - **Infantry (36):** melee (Swordsman 2/2, Brute 3/1, Spearman 1/3), ranged (Archer 2/1, Slinger 1/2), defence (Shieldman 1/3, Guard 0/4, Pikeman 2/2, armour 1).
 - **Squad deck (52, standard suits):** ♦ Siege · ♠ Defence · ♣ Offence · ♥ Long range. Units and boosts mixed.
 
+## Game records (for review)
+The published page records every game as the random seed plus each action either side took, and saves it to the page's database (`games/<id>`) after each round and when the game ends. The side panel has a note box that is stored with the game.
+`node replay.js game.json` replays a saved record and prints the log and a board after every turn. Records replay only on the rules version that made them (`VERSION` in `engine.js`; bump it whenever a rule or card changes).
+
 ## Files
-`engine.js` rules + card tables · `ai.js` greedy AI · `ui.js`/`index.html` browser UI · `test.js` tests
+`engine.js` rules + card tables · `ai.js` greedy AI · `ui.js`/`index.html` browser UI · `test.js` tests · `replay.js` game replayer

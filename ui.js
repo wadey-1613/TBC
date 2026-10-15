@@ -9,6 +9,44 @@
   // pop-up progress for the current turn
   let flagTurn = -1, infDone = false, squadDone = false, squadForce = false, infRoles = [], infSeen = -1, sqSel = null;
 
+  // ------------------------------------------------------------ game recorder
+  // Every action (yours and the AI's) is logged with the seed, so a finished game can be replayed exactly.
+  // Records are saved to the page's database (when the viewer allows it) for later review.
+  let rec = null, saving = false, dirty = false, dbPromise = null;
+  function doAction(a) {
+    if (rec) rec.actions.push(JSON.parse(JSON.stringify(a)));
+    return applyAction(state, a);
+  }
+  const getDb = () => dbPromise || (dbPromise = (async () => {
+    try { return window.claude && window.claude.use ? await window.claude.use('db') : null; } catch (e) { return null; }
+  })());
+  function setStatus(msg) { const el = $('recStatus'); if (el) el.textContent = msg; }
+  function recordDoc() {
+    return {
+      rules: E.VERSION, seed: rec.seed, human: ME, startedAt: rec.startedAt, updatedAt: Date.now(),
+      turns: state.turn, finished: state.winner != null, winner: state.winner == null ? -1 : state.winner,
+      reason: state.reason || '', note: $('noteBox') ? $('noteBox').value : '', actionCount: rec.actions.length,
+      actions: JSON.stringify(rec.actions),
+    };
+  }
+  async function saveGame() {
+    if (!rec) return;
+    if (saving) { dirty = true; return; }
+    saving = true;
+    try {
+      const db = await getDb();
+      if (!db) { setStatus('Not recording: storage is not available in this view.'); return; }
+      setStatus('Saving game…');
+      await db.doc('games/' + rec.id).set(recordDoc());
+      setStatus('Game saved at ' + new Date().toLocaleTimeString() + ' (' + rec.actions.length + ' actions)');
+    } catch (e) {
+      setStatus('Could not save the game (' + ((e && e.code) || 'error') + ').');
+    } finally {
+      saving = false;
+      if (dirty) { dirty = false; saveGame(); }
+    }
+  }
+
   // ------------------------------------------------------------ selection logic
   // pending = partial action: { hand?, deploy?, from?, mode?, cell?, target? }. Legal actions are filtered by it.
   function fieldsMatch(a, pd) {
@@ -25,7 +63,7 @@
 
   function run(a) {
     pending = null;
-    applyAction(state, a);
+    doAction(a);
     afterAction();
   }
 
@@ -65,8 +103,8 @@
   function aiLoop() {
     aiRunning = true;
     const step = () => {
-      if (state.winner != null || state.active === ME) { aiRunning = false; return render(); }
-      applyAction(state, AI.chooseAction(state));
+      if (state.winner != null || state.active === ME) { aiRunning = false; saveGame(); return render(); }
+      doAction(AI.chooseAction(state));
       render();
       if (state.winner != null) { aiRunning = false; return showEnd(); }
       setTimeout(step, 650);
@@ -79,6 +117,7 @@
     $('overlayBox').innerHTML = `<h1>${w === ME ? 'Victory!' : w === 2 ? 'Draw' : 'Defeat'}</h1><p>${state.reason} (turn ${state.turn})</p><button id="again">Play again</button>`;
     $('overlay').classList.add('show');
     $('again').onclick = start;
+    saveGame();
   }
 
   function showMenu() {
@@ -89,7 +128,11 @@
   }
 
   function start() {
-    state = newGame((Math.random() * 2 ** 31) | 0);
+    const seed = (Math.random() * 2 ** 31) | 0;
+    state = newGame(seed);
+    rec = { id: 'g' + Date.now().toString(36) + '-' + seed, seed, startedAt: Date.now(), actions: [] };
+    setStatus('Game not saved yet. It saves after each round.');
+    if ($('noteBox')) $('noteBox').value = '';
     pending = null; aiRunning = false; prevUnits = new Map(); flagTurn = -1; infSeen = -1; infRoles = [];
     $('overlay').classList.remove('show');
     render();
@@ -112,7 +155,7 @@
   function barHtml(p) {
     const pl = state.players[p], k = E.kingOf(state, p);
     return `<b>${p === ME ? 'You' : 'Opponent'}</b><span>Castle <b>♥${k.hp}/${k.maxHp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span>Moves <b>${pl.moves}</b></span>`
-      + `<span>Squad deck <b>${pl.deck.length}</b>/${pl.squadDiscard.length}</span><span>Infantry <b>${pl.infDeck.length}</b>/${pl.infDiscard.length}</span>`
+      + `<span title="Traps on the board (max ${E.MAX_TRAPS} each)">Traps <b>${state.traps.filter((t) => t.p === p).length}</b>/${E.MAX_TRAPS}</span><span>Squad deck <b>${pl.deck.length}</b>/${pl.squadDiscard.length}</span><span>Infantry <b>${pl.infDeck.length}</b>/${pl.infDiscard.length}</span>`
       + `<span class="grow"></span>${state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
   }
 
@@ -252,7 +295,7 @@
       const role = infRoles[i];
       if (role !== 'deploy') moves.push({ i, t: role === 'recycle' ? 'recycle' : role === 'hold' ? 'holdInf' : 'discardInf' });
     });
-    moves.sort((a, b) => b.i - a.i).forEach((m) => applyAction(state, { t: m.t, pick: m.i }));
+    moves.sort((a, b) => b.i - a.i).forEach((m) => doAction({ t: m.t, pick: m.i }));
     infDone = true; infRoles = [];
     pending = pl.infOffer.length > 0 && canDeployNow() ? { deploy: 0 } : null;
     render();
@@ -320,12 +363,13 @@
     const sh = t.closest('[data-sqhold]');
     if (sh) { squadDone = true; const k = +sh.dataset.sqhold; sqSel = null; return run({ t: 'hold', pick: k }); }
     if (t.closest('#sqLater')) { squadDone = true; sqSel = null; return render(); }
-    if (t.closest('#sqDiscard')) { squadDone = true; sqSel = null; [1, 0].forEach((i) => { if (state.players[ME].squadOffer[i] !== undefined) applyAction(state, { t: 'discardSquad', pick: i }); }); return render(); }
+    if (t.closest('#sqDiscard')) { squadDone = true; sqSel = null; [1, 0].forEach((i) => { if (state.players[ME].squadOffer[i] !== undefined) doAction({ t: 'discardSquad', pick: i }); }); return render(); }
     const hand = t.closest('[data-hand]');
     if (hand) return onHand(+hand.dataset.hand);
     const cell = t.closest('.cell');
     if (cell) return onTile({ r: +cell.dataset.r, c: +cell.dataset.c });
   });
+  $('noteBtn').onclick = () => { if (rec) { saveGame(); } };
   $('endBtn').onclick = () => { if (myTurn()) run({ t: 'end' }); };
   $('trapBtn').onclick = () => { if (pending && pending.from) { pending = { from: pending.from, mode: pending.mode === 'trap' ? undefined : 'trap' }; render(); } };
   $('placeBtn').onclick = () => { pending = { deploy: 0 }; render(); };

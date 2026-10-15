@@ -559,7 +559,8 @@
     return state;
   }
 
-  const api = { ROWS, COLS, KING_C, KING_HP, HAND_MAX, MOVES, DEFENCE_ZONE, MAX_TRAPS, SYM, SUIT_ROLE, CLS_SYM, TRAPS, CARDS, DECK, INF_DECK, newGame, legalActions, applyAction, clone, hasKw, suitOf, isKing, isInf, sameRef, locEq, backRow, dirOf, kingOf, inRange, reachTiles, attackTargets, spawnTiles, spawnTilesFor, moveDests, trapAt, unitAt };
+  const VERSION = 'r10'; // bump whenever a rule or card changes: recorded games replay only on the version that recorded them
+  const api = { VERSION, ROWS, COLS, KING_C, KING_HP, HAND_MAX, MOVES, DEFENCE_ZONE, MAX_TRAPS, SYM, SUIT_ROLE, CLS_SYM, TRAPS, CARDS, DECK, INF_DECK, newGame, legalActions, applyAction, clone, hasKw, suitOf, isKing, isInf, sameRef, locEq, backRow, dirOf, kingOf, inRange, reachTiles, attackTargets, spawnTiles, spawnTilesFor, moveDests, trapAt, unitAt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TBC = api;
 })(typeof window !== 'undefined' ? window : globalThis);

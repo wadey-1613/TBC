@@ -17,6 +17,7 @@ function checkInvariants(s) {
   for (const pl of s.players) {
     assert(pl.hand.length <= E.HAND_MAX, 'hand over 3');
     assert(pl.deploys >= 0 && pl.moves >= 0 && pl.handLeft >= 0);
+    assert(s.traps.filter((x) => x.p === s.players.indexOf(pl)).length <= E.MAX_TRAPS, 'trap cap');
   }
 }
 
