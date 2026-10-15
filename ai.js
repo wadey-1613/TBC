@@ -26,6 +26,13 @@
         } else if (Math.abs(r - home) <= 2) v += 1.5;              // walls hold the line near home
       }
     }
+    v += E.tileCount(s, p) * 0.9;                                              // land is score (and the tie-break at the turn limit)
+    for (const o of s.outposts) {                                              // hold outposts, and build on them
+      const holder = s.board[o.r][o.c];
+      if (!holder || holder.p !== p) continue;
+      v += o.kind === 'mine' ? 4 : o.kind === 'bunker' ? 3 : o.kind === 'lookout' ? 2 : 2 + (holder.since < pl.turns ? 1.5 : 0);
+    }
+    if (E.legendOf(s, p)) v += 3;
     for (const t of s.traps) {                                                   // own traps near the enemy are valuable
       if (t.p !== p) continue;
       let d = 4;

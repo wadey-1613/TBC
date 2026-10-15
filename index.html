@@ -12,8 +12,13 @@
   #app { display:grid; grid-template-columns: minmax(0,1fr) 320px; gap:12px; max-width:1220px; margin:0 auto; padding:10px; align-items:start; }
   #main { display:flex; flex-direction:column; gap:6px; min-width:0; max-width:800px; width:100%; margin:0 auto; }
   #board { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
-  .cell { height:68px; border:1px solid #2a3144; border-radius:6px; position:relative; background:#181c26; }
-  .cell.home0 { background:#16253a; } .cell.home1 { background:#3a1b22; }
+  .cell { height:58px; border:1px solid #2a3144; border-radius:6px; position:relative; background:#181c26; }
+  .cell.own0 { background:#16253a; border-color:#27456b; } .cell.own1 { background:#3a1b22; border-color:#6b2f39; }
+  .cell.outpost { box-shadow: inset 0 0 0 2px rgba(242,193,78,.55); }
+  .cell .op { position:absolute; top:-7px; left:50%; transform:translateX(-50%); font-size:12px; line-height:1; background:rgba(10,12,18,.8); border:1px solid var(--gold); border-radius:6px; padding:0 4px; z-index:4; color:var(--gold); }
+  .cell.grab { border:2px solid var(--gold); background:rgba(242,193,78,.14); cursor:pointer; }
+  .unit.legend { background:linear-gradient(#4a3d17,#2c2410); border-top-color:var(--gold); }
+  .unit.legend .nm { color:var(--gold); }
   .cell.reach { background:rgba(242,193,78,.08); box-shadow: inset 0 0 0 2px rgba(242,193,78,.3); }
   .cell.dest { border:2px solid var(--gold); background:rgba(242,193,78,.14); cursor:pointer; }
   .cell.ko { animation:koflash .9s ease-out; }
@@ -113,7 +118,7 @@
   #overlay.show { display:flex; }
   #overlay .box { background:var(--panel); padding:26px 34px; border-radius:14px; text-align:center; max-width:480px; }
   #overlay h1 { margin:0 0 6px; } #overlay p { color:var(--dim); }
-  @media (max-width: 980px) { #app { grid-template-columns:1fr; } #side { position:static; max-height:none; } .cell { height:60px; } .unit .nm { font-size:9px; } .pill { font-size:10px; } .card.big { width:150px; height:230px; } }
+  @media (max-width: 980px) { #app { grid-template-columns:1fr; } #side { position:static; max-height:none; } .cell { height:52px; } .unit .nm { font-size:9px; } .pill { font-size:10px; } .card.big { width:150px; height:230px; } }
 </style>
 </head>
 <body>
@@ -122,7 +127,7 @@
     <div id="foeBar" class="bar"></div>
     <div id="board"></div>
     <div id="myBar" class="bar"></div>
-    <div id="actrow"><span id="hint"></span><button id="trapBtn" class="alt small" hidden>Lay trap</button><button id="bombBtn" class="alt small" hidden>Throw bomb</button><button id="endBtn">End turn</button></div>
+    <div id="actrow"><span id="hint"></span><span id="buildRow"></span><button id="summonBtn" class="alt small" hidden>Summon Legend</button><button id="trapBtn" class="alt small" hidden>Lay trap</button><button id="bombBtn" class="alt small" hidden>Throw bomb</button><button id="endBtn">End turn</button></div>
     <div id="handrow"><div id="infslot"><h4>Free infantry</h4><div id="infantry"></div><button id="swapBtn" class="alt small">Swap (1 mana)</button></div><div id="handwrap"><h4>Your hand <span id="handInfo"></span></h4><div id="hand"></div></div></div>
   </div>
   <div id="side">
@@ -130,7 +135,10 @@
     <div id="log"></div>
     <div id="rec"><textarea id="noteBox" rows="2" placeholder="Anything odd, unfair or boring? Note it here and press Save note. It is stored with this game."></textarea><div id="recRow"><button id="noteBtn" class="alt small">Save note</button><span id="recStatus"></span></div></div>
     <div id="help">
-      <b>Goal:</b> march up the table and destroy the enemy castle (king). Yours is at the bottom.<br>
+      <b>Goal:</b> march up the table and destroy the enemy castle (king). Yours is at the bottom. If nobody does, <b>the player who owns more tiles when the rounds run out wins</b> (a tie goes to the healthier castle).<br>
+      <b>Land:</b> the board is 9 rows. Rows 1-4 start as yours (blue), rows 6-9 as theirs (red), row 5 is neutral. <b>Stepping on a tile claims it</b>, and it stays yours after you leave until an enemy steps on it. Hidden rogues claim nothing. The <b>♣ Land Grab</b> card claims a 3x3 area next to your land (not tiles holding enemy units).<br>
+      <b>Outposts ⚑:</b> four marked tiles. Hold one with a unit for a full turn, then build a <b>🏹 Lookout</b> (a ranged unit standing there shoots one tile further), a <b>⛺ Bunker</b> (+1 infantry each turn, and your infantry can be placed around it) or a <b>⛏ Gold Mine</b> (+1 mana each turn). They work for whoever is standing on them.<br>
+      <b>Legend ★:</b> your king can summon a Legend (the button above your hand). It moves up to 3 tiles a turn, claims every tile it lands on, and is about twice as tough as a normal unit. The more land you own the higher its level, and the more mana it costs. Only one at a time: after it falls you wait as many turns as it cost.<br>
       <b>Each turn:</b> you draw 1 squad card (hand up to 8; you start with 5) and get <b>1 free infantry</b> to place straight away. <b>Mana</b> is 1 on your first turn, 2 on your second, up to 10: spend it to play <b>as many cards from your hand as you can afford</b> (the number in the corner is the cost). Spend 1 mana once a turn to swap the free infantry for the next one. An unplaced infantry, and any card drawn into a full hand, goes to the bottom of its deck. When a deck runs out, its discard pile is shuffled back in.<br>
       <b>Move</b> up to 3 units a step each (forward or sideways), but only units on the board when your turn began. Every unit may attack once.
       New cards appear on your back row. <b>Defence</b> units (▣ and ♠) can also go anywhere within 2 tiles of your king.<br>

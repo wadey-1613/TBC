@@ -18,7 +18,7 @@ function checkInvariants(s) {
   assert.strictEqual(kings, 2);
   for (const pl of s.players) {
     assert(pl.hand.length <= E.HAND_MAX, 'hand over 8');
-    assert(pl.mana >= 0 && pl.mana <= pl.maxMana && pl.maxMana <= E.MAX_MANA, 'mana out of range');
+    assert(pl.mana >= 0 && pl.mana <= pl.maxMana && pl.maxMana <= E.MAX_MANA + 4, 'mana out of range');
     assert(pl.moves >= 0);
   }
 }
@@ -37,8 +37,8 @@ const rng = (seed) => () => { seed = (seed * 1664525 + 1013904223) >>> 0; return
 const randomPick = (r) => (st) => { const acts = E.legalActions(st); return acts[Math.floor(r() * acts.length)]; };
 
 // --- decks
-assert.strictEqual(E.DECK.length, 53, '52 standard cards + the Siege Tower');
-assert.strictEqual(new Set(E.DECK).size, 53);
+assert.strictEqual(E.DECK.length, 55, '52 standard cards + the Siege Tower + 2 Land Grabs');
+assert.strictEqual(new Set(E.DECK).size, 55);
 assert.strictEqual(E.INF_DECK.length, 38, '36 + 2 extra rogues');
 const cls = (c) => E.INF_DECK.filter((id) => E.CARDS[id].cls === c).length;
 assert.deepStrictEqual([cls('melee'), cls('ranged'), cls('defence'), cls('rogue')], [10, 10, 10, 8]);
@@ -54,7 +54,7 @@ function fresh() {
 }
 const put = (s, p, r, c, id) => {
   const k = E.CARDS[id];
-  return (s.board[r][c] = { uid: ++s.uid, id, p, atk: k.atk, hp: k.hp, maxHp: k.hp, armor: k.armor, maxArmor: k.armor, attacked: false, moved: false, fresh: false, trapped: false, stealth: !!k.rogue, ammo: k.rogue ? 1 : 0, garrison: null, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false });
+  return (s.board[r][c] = { uid: ++s.uid, id, p, atk: k.atk, hp: k.hp, maxHp: k.hp, armor: k.armor, maxArmor: k.armor, attacked: false, moved: false, fresh: false, trapped: false, stealth: !!k.rogue, ammo: k.rogue ? 1 : 0, garrison: null, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false, since: 0 });
 };
 const acts = (s, t) => E.legalActions(s).filter((a) => a.t === t);
 const attack = (s, from, target, extra) => E.applyAction(s, Object.assign({ t: 'attack', from, target }, extra));
@@ -435,6 +435,130 @@ const endTurns = (s, n) => { for (let i = 0; i < n; i++) E.applyAction(s, { t: '
   s.board[E.ROWS - 1][3].hp = 1;
   E.applyAction(s, k[0]);
   assert.strictEqual(s.winner, 0);
+}
+
+
+// --- territory, outposts, legend (r14)
+{ // 9 rows; home territory; moving claims tiles and they stay yours
+  assert.strictEqual(E.ROWS, 9);
+  const s = fresh();
+  assert.strictEqual(E.tileCount(s, 0), 28); assert.strictEqual(E.tileCount(s, 1), 28);
+  put(s, 0, 3, 2, 'iSword');
+  E.applyAction(s, { t: 'move', from: { r: 3, c: 2 }, cell: { r: 4, c: 2 } });
+  assert.strictEqual(s.owner[4][2], 0, 'stepping onto neutral ground claims it');
+  E.applyAction(s, { t: 'end' }); E.applyAction(s, { t: 'end' });
+  E.applyAction(s, { t: 'move', from: { r: 4, c: 2 }, cell: { r: 5, c: 2 } });
+  assert.strictEqual(s.owner[5][2], 0, 'stepping onto enemy ground claims it');
+  assert.strictEqual(s.owner[4][2], 0, 'tiles stay yours after you leave');
+  assert.strictEqual(E.tileCount(s, 0), 30); assert.strictEqual(E.tileCount(s, 1), 27);
+}
+{ // hidden rogues claim nothing; revealed ones do
+  const s = fresh();
+  put(s, 0, 3, 2, 'iTrapper');
+  E.applyAction(s, { t: 'move', from: { r: 3, c: 2 }, cell: { r: 5, c: 2 } });
+  assert.strictEqual(s.owner[5][2], 1, 'a hidden rogue claims no tiles');
+}
+{ // Land Grab
+  const s = fresh();
+  s.players[0].hand = ['CL'];
+  const centres = acts(s, 'play').map((a) => a.target);
+  assert(centres.every((t) => t.r >= 2), 'must be next to your own land');
+  assert(!centres.some((t) => t.r === 0), 'a centre must flip something');
+  E.applyAction(s, { t: 'play', hand: 0, target: { r: 4, c: 3 } });
+  assert.strictEqual(E.tileCount(s, 0), 28 + 6);
+  const s2 = fresh();
+  put(s2, 1, 4, 3, 'iSword');
+  s2.players[0].hand = ['CL'];
+  E.applyAction(s2, { t: 'play', hand: 0, target: { r: 4, c: 3 } });
+  assert.strictEqual(s2.owner[4][3], null, 'a tile with an enemy unit is not taken');
+  assert.strictEqual(E.tileCount(s2, 0), 28 + 5);
+}
+{ // the king summons a legend; level and cost follow land; one at a time; cooldown after death
+  const s = fresh();
+  const sm = acts(s, 'summon');
+  assert(sm.length > 0 && sm.every((a) => Math.max(Math.abs(a.cell.r - 0), Math.abs(a.cell.c - 3)) === 1));
+  E.applyAction(s, sm[0]);
+  const lg = s.board[sm[0].cell.r][sm[0].cell.c];
+  assert(lg.legend && lg.level === 1 && lg.hp === 6 && lg.atk === 4 && lg.armor === 3);
+  assert.strictEqual(s.players[0].mana, 9, 'level 1 costs 1 mana');
+  assert.strictEqual(acts(s, 'summon').length, 0, 'only one legend at a time');
+  assert.strictEqual(acts(s, 'move').filter((a) => a.from.r === lg.r).length, 0);
+  lg.fresh = false;
+  // 3 steps, doesn't use the 3 moves, claims every tile it lands on
+  const at = sm[0].cell;
+  let pos = { r: at.r, c: at.c };
+  for (let i = 0; i < 3; i++) {
+    const mv = acts(s, 'move').find((a) => a.from.r === pos.r && a.from.c === pos.c && a.cell.r === pos.r + 1);
+    assert(mv, 'step ' + i);
+    E.applyAction(s, mv); pos = mv.cell;
+  }
+  assert.strictEqual(s.players[0].moves, 3);
+  assert.strictEqual(acts(s, 'move').filter((a) => a.from.r === pos.r && a.from.c === pos.c).length, 0, 'only 3 steps');
+  assert.strictEqual(s.owner[pos.r][pos.c], 0);
+  // dies -> cooldown equal to its cost
+  s.board[pos.r][pos.c].hp = 0;
+  E.applyAction(s, { t: 'end' }); E.applyAction(s, { t: 'end' });
+  assert.strictEqual(s.players[0].legendCd, 0, 'killed legend: cooldown of 1 turn passes at my next turn start');
+}
+{ // level scales with land
+  const s = fresh();
+  assert.strictEqual(E.legendLevel(s, 0), 1);
+  for (let r = 4; r < 7; r++) for (let c = 0; c < 7; c++) s.owner[r][c] = 0;
+  assert(E.tileCount(s, 0) >= 38);
+  assert.strictEqual(E.legendLevel(s, 0), 3);
+  assert.strictEqual(acts(s, 'summon')[0] && s.players[0].mana >= 3, true);
+  const before = s.players[0].mana;
+  E.applyAction(s, acts(s, 'summon')[0]);
+  assert.strictEqual(before - s.players[0].mana, 3);
+  const lg = s.board[1][2] || s.board[1][3] || s.board[1][4] || s.board[0][2] || s.board[0][4];
+  assert(lg && lg.level === 3 && lg.hp === 10);
+}
+{ // outposts: 4 of them in mirrored pairs; build after holding a full turn
+  const s = E.newGame(7);
+  assert.strictEqual(s.outposts.length, 4);
+  for (const o of s.outposts) assert(s.outposts.some((q) => q.r === E.ROWS - 1 - o.r && q.c === E.COLS - 1 - o.c), 'mirrored');
+  const t = fresh();
+  t.outposts = [{ r: 4, c: 3, kind: null }];
+  const u = put(t, 0, 3, 3, 'iSword');
+  E.applyAction(t, { t: 'move', from: { r: 3, c: 3 }, cell: { r: 4, c: 3 } });
+  assert.strictEqual(acts(t, 'build').length, 0, 'not on the turn you arrive');
+  t.players[0].turns++;                                  // a full turn later
+  assert.strictEqual(acts(t, 'build').length, 3);
+  E.applyAction(t, { t: 'build', at: { r: 4, c: 3 }, kind: 'mine' });
+  assert.strictEqual(t.outposts[0].kind, 'mine');
+  assert.strictEqual(acts(t, 'build').length, 0);
+  // gold mine: +1 mana at the start of your turn while you hold it
+  E.applyAction(t, { t: 'end' }); E.applyAction(t, { t: 'end' });
+  assert.strictEqual(t.players[0].maxMana, Math.min(10, t.players[0].turns) + 1);
+}
+{ // lookout: ranged unit shoots one tile further
+  const s = fresh();
+  s.outposts = [{ r: 3, c: 3, kind: 'lookout' }];
+  put(s, 0, 3, 3, 'iArcher'); put(s, 1, 7, 3, 'iSword');
+  assert.strictEqual(acts(s, 'attack').length, 1, 'range 4 from a lookout');
+  const s2 = fresh();
+  s2.outposts = [];
+  put(s2, 0, 3, 3, 'iArcher'); put(s2, 1, 7, 3, 'iSword');
+  assert.strictEqual(acts(s2, 'attack').length, 0);
+}
+{ // bunker: an extra infantry each turn and placement around it
+  const s = fresh();
+  s.outposts = [{ r: 4, c: 3, kind: 'bunker' }];
+  put(s, 0, 4, 3, 'iSword');
+  s.players[0].infHand = ['iSword'];
+  const cells = acts(s, 'deploy').map((a) => a.cell);
+  assert(cells.some((c) => c.r === 5 && c.c === 3), 'can place next to the bunker');
+  E.applyAction(s, { t: 'end' }); E.applyAction(s, { t: 'end' });
+  assert.strictEqual(s.players[0].infHand.length, 2, 'bunker deals an extra infantry');
+}
+{ // time limit: more tiles wins
+  const s = fresh();
+  s.turn = E.MAX_TURNS;
+  s.active = 1;
+  for (let c = 0; c < 7; c++) s.owner[4][c] = 0;
+  E.applyAction(s, { t: 'end' });
+  assert.strictEqual(s.winner, 0);
+  assert(/tiles/.test(s.reason));
 }
 
 // --- playouts

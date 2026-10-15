@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   const E = window.TBC;
-  const { CARDS, SYM, SUIT_ROLE, CLS_SYM, TRAPS, ROWS, COLS, HAND_MAX, newGame, legalActions, applyAction, sameRef, locEq, isKing, AI } = E;
+  const { CARDS, SYM, SUIT_ROLE, CLS_SYM, TRAPS, OUTPOSTS, LEGEND_LEVELS, ROWS, COLS, HAND_MAX, newGame, legalActions, applyAction, sameRef, locEq, isKing, AI } = E;
   const ME = 0;
   const $ = (id) => document.getElementById(id);
   let state = null, pending = null, legal = [], aiRunning = false, notice = '';
@@ -48,13 +48,14 @@
   // ------------------------------------------------------------ selection logic
   // pending = partial action: { hand?, deploy?, from?, mode?, cell?, target? }. Legal actions are filtered by it.
   function fieldsMatch(a, pd) {
+    if (pd.summon !== undefined && a.t !== 'summon') return false;
     return (pd.deploy === undefined || (a.t === 'deploy' && a.pick === pd.deploy)) &&
       (pd.hand === undefined || (a.t === 'play' && a.hand === pd.hand)) &&
       (pd.from === undefined || (locEq(a.from, pd.from) && (pd.mode ? a.t === pd.mode : a.t !== 'trap' && a.t !== 'bomb'))) &&
       (pd.cell === undefined || locEq(a.cell, pd.cell)) &&
       (pd.target === undefined || sameRef(a.target, pd.target));
   }
-  const CHOICE = ['deploy', 'play', 'move', 'attack', 'trap', 'bomb'];
+  const CHOICE = ['deploy', 'play', 'move', 'attack', 'trap', 'bomb', 'summon'];
   const remaining = () => legal.filter((a) => CHOICE.includes(a.t) && (!pending || fieldsMatch(a, pending)));
   const complete = (a, pd) => (a.cell === undefined || pd.cell !== undefined) && (a.target === undefined || pd.target !== undefined);
   const myTurn = () => state.active === ME && !aiRunning && state.winner == null;
@@ -116,7 +117,7 @@
   // The opponent's turn is replayed action by action so you can follow it. Before it moves it "thinks" for a random
   // 1-10 seconds (once per turn by default, or before every action). Small actions are quick, fights and card plays
   // linger a little. Speed and thinking can be changed, and Skip finishes the turn at once.
-  const AI_PACE = { attack: 360, play: 480, trap: 340, bomb: 420, move: 200, deploy: 260, swapInf: 80, end: 120 };
+  const AI_PACE = { attack: 360, play: 480, summon: 600, build: 500, trap: 340, bomb: 420, move: 200, deploy: 260, swapInf: 80, end: 120 };
   const AI_SPEED = { normal: 1, fast: 0.3, instant: 0 };
   const THINK_MODES = ['turn', 'action', 'off'];
   let aiSpeed = 'normal', aiThinkMode = 'turn', aiSkip = false, aiThinking = false, thoughtThisTurn = false, thinkTimer = null, thinkResume = null;
@@ -167,7 +168,7 @@
 
   function showMenu() {
     $('overlayBox').innerHTML = `<h1>King's Table</h1>
-      <p>March up the table and take the enemy castle.<br>Draw a card, spend your mana, place your free infantry, then move and fight.</p><button id="go">Start game</button>`;
+      <p>March up the table and take the enemy castle, or own more of the land when the rounds run out.<br>Draw a card, spend your mana, place your free infantry, then move and fight.</p><button id="go">Start game</button>`;
     $('overlay').classList.add('show');
     $('go').onclick = start;
   }
@@ -201,8 +202,13 @@
   function barHtml(p) {
     const pl = state.players[p], k = E.kingOf(state, p);
     const mana = `<span class="mana">${'●'.repeat(pl.mana)}<span class="off">${'●'.repeat(pl.maxMana - pl.mana)}</span></span> <b>${pl.mana}/${pl.maxMana}</b>`;
-    return `<b>${p === ME ? 'You' : 'Opponent'}</b><span>Castle <b>♥${k.hp}/${k.maxHp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span title="Mana: spend it to play cards">Mana ${mana}</span><span>Moves <b>${pl.moves}</b></span>`
-      + `<span>Hand <b>${pl.hand.length}</b></span><span title="Traps this player has on the board">Traps <b>${state.traps.filter((t) => t.p === p).length}</b></span><span>Deck <b>${pl.deck.length}</b></span><span>Infantry <b>${pl.infDeck.length}</b></span>`
+    const lg = E.legendOf(state, p), lv = E.legendLevel(state, p);
+    const legend = lg ? `<span title="Your king's Legend is on the board">Legend <b>★${state.board[lg.r][lg.c].level} alive</b></span>`
+      : pl.legendCd > 0 ? `<span title="A fallen Legend takes as many turns to come back as it cost">Legend back in <b>${pl.legendCd}</b></span>`
+      : `<span title="Land owned sets the level: more land, a stronger Legend that costs more mana (and takes that many turns to return if it falls)">Legend ready <b>★${lv} · ${LEGEND_LEVELS[lv].cost} mana</b></span>`;
+    const clock = p === ME ? `<span title="When the rounds run out, whoever owns more tiles wins">Round <b>${Math.min(E.MAX_TURNS / 2, Math.ceil(state.turn / 2))}/${E.MAX_TURNS / 2}</b></span>` : '';
+    return `<b>${p === ME ? 'You' : 'Opponent'}</b><span title="Tiles owned. Land you step on is yours until the enemy steps on it">Land <b>${E.tileCount(state, p)}</b></span>${legend}<span>Castle <b>♥${k.hp}/${k.maxHp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span title="Mana: spend it to play cards">Mana ${mana}</span><span>Moves <b>${pl.moves}</b></span>`
+      + `<span>Hand <b>${pl.hand.length}</b></span><span title="Traps this player has on the board">Traps <b>${state.traps.filter((t) => t.p === p).length}</b></span><span>Deck <b>${pl.deck.length}</b></span><span>Infantry <b>${pl.infDeck.length}</b></span>${clock}`
       + `<span class="grow"></span>${p !== ME && aiThinking ? '<span class="think">💭 thinking<span class="dots"><i>.</i><i>.</i><i>.</i></span></span>' : state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
   }
 
@@ -217,32 +223,35 @@
   function tileHtml(r, c, rem) {
     const u = state.board[r][c], ref = { r, c };
     const isDest = pending !== null && pending.cell === undefined && rem.some((a) => locEq(a.cell, ref));
-    const home = r === 0 ? ' home0' : r === ROWS - 1 ? ' home1' : '';
+    const ow = state.owner[r][c], home = ow === 0 ? ' own0' : ow === 1 ? ' own1' : '';
+    const op = E.outpostAt(state, r, c);
+    const opHtml = op ? `<div class="op" title="${op.kind ? OUTPOSTS[op.kind].name + ': ' + OUTPOSTS[op.kind].text + ' Works for whoever stands on it.' : 'Outpost site: hold it with a unit for a full turn, then build a Lookout, Bunker or Gold Mine here.'}">${op.kind ? OUTPOSTS[op.kind].sym : '⚑'}</div>` : '';
     const ko = deaths.has(r * COLS + c);
-    const attrs = `class="cell${home}${isDest ? ' dest' : ''}${reachSet.has(r * COLS + c) ? ' reach' : ''}${ko ? ' ko' : ''}" data-r="${r}" data-c="${c}"`;
+    const isGrab = pending !== null && pending.target === undefined && rem.some((a) => a.target && sameRef(a.target, ref));
+    const attrs = `class="cell${home}${op ? ' outpost' : ''}${isGrab && !u ? ' grab' : ''}${isDest ? ' dest' : ''}${reachSet.has(r * COLS + c) ? ' reach' : ''}${ko ? ' ko' : ''}" data-r="${r}" data-c="${c}"`;
     if (!u) {
       const t = E.trapAt(state, r, c);
       const trap = t ? `<div class="trap p${t.p}" title="${t.p === ME ? 'Your' : 'Enemy'} ${TRAPS[t.type].name}: ${TRAPS[t.type].text}">${TRAPS[t.type].sym}</div>` : '';
-      return `<div ${attrs}>${trap}${ko ? '<div class="float dead">✖</div>' : ''}</div>`;
+      return `<div ${attrs}>${opHtml}${trap}${ko ? '<div class="float dead">✖</div>' : ''}</div>`;
     }
     const k = CARDS[u.id], ch = changes.get(u.uid) || { hp: 0, ar: 0 }, delta = ch.hp;
     const isTarget = pending !== null && pending.target === undefined && rem.some((a) => a.target && sameRef(a.target, ref));
     const ready = u.p === ME && !pending && myTurn() && legal.some((a) => a.from && locEq(a.from, ref));
     const sel = pending && pending.from && locEq(pending.from, ref);
-    const cls = ['unit', 'p' + u.p, k.inf ? 'I' : (k.suit || ''), isKing(u) ? 'king' : '', ready ? 'ready' : '', isTarget ? 'target' : '', sel ? 'selected' : '', u.attacked && !isKing(u) ? 'spent' : '', u.fresh ? 'fresh' : '', delta < 0 || ch.ar < 0 ? 'hit' : delta > 0 || ch.ar > 0 ? 'healed' : '', u.stealth ? 'hidden' : '', (u.fresh || u.stealth || u.ammo > 0 || statusText(u)) ? 'hastl' : ''].join(' ');
-    const rk = isKing(u) ? '♔' : k.inf ? CLS_SYM[k.cls] : `${k.rank}${SYM[k.suit]}`;
+    const cls = ['unit', 'p' + u.p, k.inf ? 'I' : (k.suit || ''), isKing(u) ? 'king' : '', u.legend ? 'legend' : '', ready ? 'ready' : '', isTarget ? 'target' : '', sel ? 'selected' : '', u.attacked && !isKing(u) ? 'spent' : '', u.fresh ? 'fresh' : '', delta < 0 || ch.ar < 0 ? 'hit' : delta > 0 || ch.ar > 0 ? 'healed' : '', u.stealth ? 'hidden' : '', (u.fresh || u.stealth || u.ammo > 0 || statusText(u) || (u.legend && u.p === state.active)) ? 'hastl' : ''].join(' ');
+    const rk = isKing(u) ? '♔' : u.legend ? '★' + u.level : k.inf ? CLS_SYM[k.cls] : `${k.rank}${SYM[k.suit]}`;
     const title = `${k.name}${k.inf ? ' — ' + k.cls + ' infantry' : k.suit ? ' — ' + SUIT_ROLE[k.suit] : ''} [${isKing(u) ? 'castle' : reachLabel(k)}${k.kw.length ? ', ' + k.kw.join(', ') : ''}]${k.text ? ': ' + k.text : ''}`;
     const ratio = Math.max(0, u.hp / u.maxHp), barCls = ratio <= 0.34 ? 'low' : ratio <= 0.67 ? 'mid' : '';
     const stats = isKing(u)
       ? `<div class="stats"><span class="pill h${u.hp < u.maxHp ? ' hurt' : ''}">♥${u.hp}/${u.maxHp}</span><span class="pill ar${u.armor ? '' : ' zero'}${u.armor < u.maxArmor ? ' worn' : ''}">🛡${u.armor}${u.maxArmor ? '/' + u.maxArmor : ''}</span></div>`
       : statsHtml(u.id, u);
     const ammo = u.ammo > 0 ? (k.rogue === 'bomb' ? '💣' : TRAPS[k.trap].sym) : '';
-    const tl = [u.fresh ? 'NEW' : '', u.stealth ? 'HIDDEN' : '', ammo, statusText(u)].filter(Boolean).join(' ');
+    const tl = [u.fresh ? 'NEW' : '', u.legend && !u.fresh && u.p === state.active ? '⇢' + u.steps : '', u.stealth ? 'HIDDEN' : '', ammo, statusText(u)].filter(Boolean).join(' ');
     const gar = u.garrison ? `<div class="gar" title="${CARDS[u.garrison.id].name} is inside: it shoots from here and can't be targeted. It drops out if the tower falls.">🏹 ${CARDS[u.garrison.id].name} ⚔${u.garrison.atk} ♥${u.garrison.hp}/${u.garrison.maxHp}</div>` : '';
     const num = (delta ? `<div class="float ${delta < 0 ? 'dmg' : 'heal'}">${delta > 0 ? '+' : ''}${delta}</div>` : '')
       + (ch.ar ? `<div class="float arm" ${delta ? 'style="top:36px"' : ''}>🛡${ch.ar > 0 ? '+' : ''}${ch.ar}</div>` : '');
     return `<div ${attrs}><div class="${cls}" title="${title}"><span class="rk">${rk}</span>${tl ? `<span class="tl">${tl}</span>` : ''}<div class="nm">${k.name}</div>${gar}`
-      + `<div class="hpbar"><i class="${barCls}" style="width:${Math.round(ratio * 100)}%"></i></div>${stats}</div>${num}</div>`;
+      + `<div class="hpbar"><i class="${barCls}" style="width:${Math.round(ratio * 100)}%"></i></div>${stats}</div>${num}${opHtml}</div>`;
   }
 
   // compare with the previous render so hits, armour loss, heals and kills can be flashed
@@ -298,12 +307,15 @@
     if (!pending) {
       const bits = [];
       if (pl.infHand.length) bits.push('place your free infantry');
-      bits.push(`spend your ${pl.mana} mana on cards from your hand`);
+      bits.push(`spend your ${pl.mana} mana on cards from your hand${legal.some((a) => a.t === 'summon') ? ' or on your king\'s Legend' : ''}`);
+      if (legal.some((a) => a.t === 'build')) bits.push('build on the outpost you are holding');
       return 'Your turn: ' + bits.join(', ') + '. Select a green unit to move or attack (' + pl.moves + ' move' + (pl.moves === 1 ? '' : 's') + ' left).';
     }
+    if (pending.summon) return 'Choose a tile next to your king for the Legend. It moves up to 3 tiles a turn and claims every tile it lands on.';
     if (pending.deploy !== undefined) return 'Choose a tile for the infantry (free). Defence units can go within 2 tiles of your king; archers can go into a Siege Tower.';
     if (pending.hand !== undefined) {
       const needCell = remaining().some((a) => a.cell !== undefined);
+      if (!needCell && remaining().some((a) => a.target && !CARDS[state.players[ME].hand[pending.hand]].inf && CARDS[state.players[ME].hand[pending.hand]].target === 'tile')) return 'Choose the centre of the 3x3 area to claim (it must touch your land; tiles with enemy units are not taken).';
       return needCell && pending.cell === undefined ? 'Choose a tile for it. Defence units can go within 2 tiles of your king; archers can go into a Siege Tower.' : 'Choose a target.';
     }
     if (pending.mode === 'trap') return 'Choose an empty tile next to the rogue for the trap.';
@@ -325,6 +337,11 @@
     $('swapBtn').disabled = !(myTurn() && legal.some((a) => a.t === 'swapInf'));
     const sel = pending && pending.from && state.board[pending.from.r][pending.from.c];
     const has = (t) => !!(myTurn() && sel && legal.some((a) => a.t === t && locEq(a.from, pending.from)));
+    const canSummon = myTurn() && legal.some((a) => a.t === 'summon'), lv = E.legendLevel(state, ME);
+    $('summonBtn').hidden = !canSummon;
+    $('summonBtn').textContent = pending && pending.summon ? 'Cancel summon' : `Summon Legend ★${lv} (${LEGEND_LEVELS[lv].cost})`;
+    const builds = myTurn() ? legal.filter((a) => a.t === 'build') : [];
+    $('buildRow').innerHTML = builds.map((a) => `<button class="alt small" data-build="${a.at.r},${a.at.c},${a.kind}" title="${OUTPOSTS[a.kind].text}">${OUTPOSTS[a.kind].sym} Build ${OUTPOSTS[a.kind].name}</button>`).join('');
     $('trapBtn').hidden = !has('trap'); $('bombBtn').hidden = !has('bomb');
     $('trapBtn').textContent = pending && pending.mode === 'trap' ? 'Cancel trap' : 'Lay trap';
     $('bombBtn').textContent = pending && pending.mode === 'bomb' ? 'Cancel bomb' : 'Throw bomb';
@@ -336,6 +353,8 @@
   // ------------------------------------------------------------ events
   document.addEventListener('click', (e) => {
     const t = e.target;
+    const bld = t.closest('[data-build]');
+    if (bld && myTurn()) { const [r, c, kind] = bld.dataset.build.split(','); return run({ t: 'build', at: { r: +r, c: +c }, kind }); }
     const hand = t.closest('[data-hand]');
     if (hand) return onHand(+hand.dataset.hand);
     const inf = t.closest('[data-inf]');
@@ -352,6 +371,7 @@
   $('swapBtn').onclick = () => { if (myTurn()) run({ t: 'swapInf', pick: 0 }); };
   $('endBtn').onclick = () => { if (myTurn()) run({ t: 'end' }); };
   const toggleMode = (mode) => { if (pending && pending.from) { pending = { from: pending.from, mode: pending.mode === mode ? undefined : mode }; render(); } };
+  $('summonBtn').onclick = () => { if (myTurn()) { pending = pending && pending.summon ? null : { summon: true }; render(); } };
   $('trapBtn').onclick = () => toggleMode('trap');
   $('bombBtn').onclick = () => toggleMode('bomb');
   const cancel = () => { pending = null; notice = ''; if (state) render(); };

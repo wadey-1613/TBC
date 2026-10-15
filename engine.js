@@ -1,6 +1,9 @@
 /* TBC rules engine — pure state + actions, no DOM. Browser: window.TBC. Node: require().
  *
- * A shared 7-wide x 8-deep battlefield. Player 0 starts on row 0 and marches toward row 7; player 1 the reverse.
+ * A shared 7-wide x 9-deep battlefield. Player 0 starts on row 0 and marches toward row 8; player 1 the reverse.
+ * Tiles are claimed by landing on them and stay yours until the enemy lands on them (or plays Land Grab). Rows 1-4 start as player 0's,
+ * 6-9 as player 1's. Win by killing the enemy king, or by owning more tiles when the turn limit runs out.
+ * Each king can summon one Legend at a time; its level grows with the tiles you own.
  * Each player's king (the castle) sits in the middle of their back row. Win by killing the enemy king.
  *
  * Per turn:  you start with 5 cards, draw 1 squad card each turn (the first player skips the draw on turn 1) and hold up to 8.
@@ -16,7 +19,18 @@
 (function (root) {
   'use strict';
 
-  const ROWS = 8, COLS = 7, KING_C = 3, KING_HP = 30, HAND_MAX = 8, START_HAND = 5, MAX_MANA = 10, MOVES = 3, MAX_TURNS = 300;
+  const ROWS = 9, COLS = 7, KING_C = 3, KING_HP = 30, HAND_MAX = 8, START_HAND = 5, MAX_MANA = 10, MOVES = 3, MAX_TURNS = 80;
+  const HOME_ROWS = 4;                      // rows 1-4 are yours at the start, row 5 is neutral, rows 6-9 are theirs
+  // The king summons a LEGEND. Its level (and cost in mana, and the turns it takes to come back after dying) grows with the tiles you own.
+  const LEGEND_LEVELS = [null, { cost: 1, atk: 4, hp: 6, armor: 3 }, { cost: 2, atk: 5, hp: 8, armor: 4 }, { cost: 3, atk: 6, hp: 10, armor: 5 }];
+  const LEGEND_STEPS = 3;
+  const levelFor = (tiles) => (tiles >= 38 ? 3 : tiles >= 31 ? 2 : 1);
+  // Outposts: 4 marked tiles. Hold one with a unit for a full turn, then build one of these on it. They work for whoever stands on them.
+  const OUTPOSTS = {
+    lookout: { name: 'Lookout', sym: '🏹', text: 'A ranged unit standing here shoots one tile further.' },
+    bunker: { name: 'Bunker', sym: '⛺', text: 'Gives you 1 extra infantry each turn, and your infantry may be placed in the tiles around it.' },
+    mine: { name: 'Gold Mine', sym: '⛏', text: '+1 mana at the start of your turn.' },
+  };
   const DEFENCE_ZONE = 2;
   const SYM = { S: '♠', C: '♣', D: '♦', H: '♥' };
   const SUIT_ROLE = { S: 'Defence', C: 'Offence', D: 'Siege', H: 'Long range' };
@@ -125,6 +139,8 @@
   spell('C', '8', 'Conscription', 'Immediately deploy 3 infantry.', [{ op: 'summonInf', n: 3 }]);
   spell('C', '9', 'Battle Cry', 'All your units may attack again.', [{ op: 'rearm', to: 'allyUnits' }]);
   spell('C', '10', 'Drums of War', 'Your infantry get +2 attack.', [{ op: 'buff', atk: 2, hp: 0, to: 'allyInf' }]);
+  spell('C', 'L', 'Land Grab', 'Claim the 3x3 tiles around a tile next to your land (not tiles with enemy units).', [{ op: 'claim' }], { target: 'tile' });
+  spell('C', 'M', 'Land Grab', 'Claim the 3x3 tiles around a tile next to your land (not tiles with enemy units).', [{ op: 'claim' }], { target: 'tile' });
   unit('C', 'J', 'Champion', 5, 4, 0, { kw: ['swift'], text: 'Moving it does not use up one of your moves.' });
   unit('C', 'Q', 'Captain', 3, 4, 0, { text: 'Play: your infantry get +1 attack.', effects: [{ op: 'buff', atk: 1, hp: 0, to: 'allyInf' }] });
   unit('C', 'K', 'General', 4, 6, 0, { text: 'Play: all your units get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'allyUnits' }] });
@@ -150,16 +166,17 @@
     if (c.suit === 'S' && c.kind === 'unit') c.kw = ['wall'].concat(c.kw);
   }
 
+  CARDS.LEGEND = { id: 'LEGEND', kind: 'unit', name: 'Legend', reach: 'melee', atk: 4, hp: 6, armor: 3, kw: ['legend'], text: 'Summoned by your king. Moves up to 3 tiles a turn and claims every tile it lands on.' };
   CARDS.KING = { id: 'KING', kind: 'king', name: 'King', reach: 'melee', atk: 0, hp: KING_HP, armor: 0, kw: [], text: 'Lose your king and you lose the game.' };
   // mana costs (infantry are free)
   const COSTS = {
     DA: 2, D2: 3, D3: 3, D4: 4, D5: 4, D6: 5, D7: 5, D8: 6, D9: 7, D10: 8, DJ: 3, DQ: 3, DK: 4, DT: 5,
     SA: 1, S2: 2, S3: 3, S4: 4, S5: 5, S6: 2, S7: 1, S8: 4, S9: 3, S10: 3, SJ: 3, SQ: 3, SK: 5,
-    CA: 1, C2: 1, C3: 2, C4: 2, C5: 3, C6: 2, C7: 3, C8: 4, C9: 4, C10: 4, CJ: 4, CQ: 3, CK: 5,
+    CL: 3, CM: 3, CA: 1, C2: 1, C3: 2, C4: 2, C5: 3, C6: 2, C7: 3, C8: 4, C9: 4, C10: 4, CJ: 4, CQ: 3, CK: 5,
     HA: 2, H2: 3, H3: 3, H4: 4, H5: 5, H6: 3, H7: 3, H8: 5, H9: 2, H10: 2, HJ: 4, HQ: 1, HK: 6,
   };
   for (const id of Object.keys(CARDS)) CARDS[id].cost = CARDS[id].inf ? 0 : (COSTS[id] || 0);
-  const DECK = Object.keys(CARDS).filter((id) => !CARDS[id].inf && id !== 'KING');
+  const DECK = Object.keys(CARDS).filter((id) => !CARDS[id].inf && id !== 'KING' && id !== 'LEGEND');
 
   // ---------------------------------------------------------------- helpers
   function rand(state) { // mulberry32
@@ -194,6 +211,50 @@
   const trapAt = (state, r, c) => state.traps.find((t) => t.r === r && t.c === c) || null;
   const ownTrapAt = (state, p, r, c) => { const t = trapAt(state, r, c); return !!t && t.p === p; };
 
+  // ---- territory: every tile has an owner (null = nobody). Landing on a tile claims it; hidden rogues claim nothing.
+  const ownerAt = (state, r, c) => state.owner[r][c];
+  const tileCount = (state, p) => { let n = 0; for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (state.owner[r][c] === p) n++; return n; };
+  function claim(state, u, r, c) {
+    if (u.stealth || isKing(u)) return;
+    if (state.owner[r][c] !== u.p) state.owner[r][c] = u.p;
+  }
+  const outpostAt = (state, r, c) => state.outposts.find((o) => o.r === r && o.c === c) || null;
+  // outposts whose tile holds one of p's units (that is who they work for)
+  const heldOutposts = (state, p, kind) => state.outposts.filter((o) => o.kind && (!kind || o.kind === kind) && state.board[o.r][o.c] && state.board[o.r][o.c].p === p);
+  const legendOf = (state, p) => { for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const u = state.board[r][c]; if (u && u.p === p && u.legend) return { r, c }; } return null; };
+  // empty tiles around your king where the legend may appear
+  function summonTiles(state, p) {
+    const k = backRow(p), out = [];
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const r = k + dr, c = KING_C + dc;
+      if ((dr || dc) && inBounds(r, c) && !state.board[r][c] && !ownTrapAt(state, p, r, c)) out.push({ r, c });
+    }
+    return out;
+  }
+  const legendLevel = (state, p) => levelFor(tileCount(state, p));
+  // tiles a Land Grab centred on `cell` would flip (never a tile holding an enemy unit)
+  function grabTiles(state, p, cell) {
+    const out = [];
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const r = cell.r + dr, c = cell.c + dc;
+      if (!inBounds(r, c) || state.owner[r][c] === p) continue;
+      const u = state.board[r][c];
+      if (u && u.p !== p) continue;
+      out.push({ r, c });
+    }
+    return out;
+  }
+  // centres for Land Grab: within 1 tile of land you own, and it must flip something
+  function grabCentres(state, p) {
+    const out = [];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      let near = false;
+      for (let dr = -1; dr <= 1 && !near; dr++) for (let dc = -1; dc <= 1; dc++) if (inBounds(r + dr, c + dc) && state.owner[r + dr][c + dc] === p) { near = true; break; }
+      if (near && grabTiles(state, p, { r, c }).length) out.push({ r, c });
+    }
+    return out;
+  }
+
   function allUnits(state, p) {
     const out = [];
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const u = state.board[r][c]; if (u && u.p === p && !isKing(u)) out.push({ r, c }); }
@@ -215,6 +276,12 @@
         if (inBounds(r, c) && !state.board[r][c] && !ownTrapAt(state, p, r, c) && !out.some((t) => t.r === r && t.c === c)) out.push({ r, c });
       }
     }
+    if (card.inf) {                                       // infantry may also go around a bunker you hold
+      for (const o of heldOutposts(state, p, 'bunker')) for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const r = o.r + dr, c = o.c + dc;
+        if ((dr || dc) && inBounds(r, c) && !state.board[r][c] && !ownTrapAt(state, p, r, c) && !out.some((t) => t.r === r && t.c === c)) out.push({ r, c });
+      }
+    }
     if (!out.length) {                                    // overflow: if every usual tile is full, any empty tile on your first two rows will do
       const kr = backRow(p);
       for (const r of [kr, kr + dirOf(p)]) for (let c = 0; c < COLS; c++) if (!state.board[r][c] && !ownTrapAt(state, p, r, c)) out.push({ r, c });
@@ -229,22 +296,24 @@
   }
 
   // is `to` inside the reach shape of unit `u` standing at `from`?
-  function inRange(u, from, to) {
+  function inRange(u, from, to, ext) {
     const dr = to.r - from.r, dc = to.c - from.c, fwd = dr * dirOf(u.p), side = Math.abs(dc);
     switch (CARDS[u.id].reach) {
       case 'none': return false;
-      case 'range': return (fwd === 2 || fwd === 3) && side <= 1;
+      case 'range': return (fwd === 2 || fwd === 3 || (ext && fwd === 4)) && side <= 1;
       case 'defence': return (fwd === 1 && side <= 1) || (fwd === 0 && side === 1);
       default: return Math.max(Math.abs(dr), side) === 1;
     }
   }
+  const lookoutAt = (state, r, c) => { const o = outpostAt(state, r, c); return !!o && o.kind === 'lookout'; };
   // who shoots from a tile: an archer garrisoned in a tower, otherwise the unit itself
   const shooterAt = (state, r, c) => { const u = state.board[r][c]; return u && u.garrison && u.garrison.atk > 0 ? u.garrison : u; };
   // every tile of the board inside the reach shape of whoever attacks from tile (r, c) (for the UI)
   function reachTiles(state, r, c) {
     const s = shooterAt(state, r, c), out = [];
     if (!s || s.atk <= 0) return out;
-    for (let rr = 0; rr < ROWS; rr++) for (let cc = 0; cc < COLS; cc++) if (inRange(s, { r, c }, { r: rr, c: cc })) out.push({ r: rr, c: cc });
+    const ext = lookoutAt(state, r, c);
+    for (let rr = 0; rr < ROWS; rr++) for (let cc = 0; cc < COLS; cc++) if (inRange(s, { r, c }, { r: rr, c: cc }, ext)) out.push({ r: rr, c: cc });
     return out;
   }
 
@@ -263,7 +332,7 @@
 
   const makeUnit = (state, p, id) => {
     const c = CARDS[id];
-    return { uid: ++state.uid, id, p, atk: c.atk, hp: c.hp, maxHp: c.hp, armor: c.armor, maxArmor: c.armor, attacked: false, moved: false, fresh: true, trapped: false, stealth: !!c.rogue, ammo: c.rogue ? 1 : 0, garrison: null, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false };
+    return { uid: ++state.uid, id, p, atk: c.atk, hp: c.hp, maxHp: c.hp, armor: c.armor, maxArmor: c.armor, attacked: false, moved: false, fresh: true, trapped: false, stealth: !!c.rogue, ammo: c.rogue ? 1 : 0, garrison: null, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false, since: state.players[p] ? state.players[p].turns : 0 };
   };
 
   // archers (ranged infantry) may be placed or moved into a friendly Siege Tower that has room
@@ -272,11 +341,11 @@
 
   // hidden enemy rogues can't be targeted
   function attackTargets(state, r, c, shooter) {
-    const u = shooter || state.board[r][c], out = [];
-    for (let rr = Math.max(0, r - 3); rr <= Math.min(ROWS - 1, r + 3); rr++) {
+    const u = shooter || state.board[r][c], out = [], ext = lookoutAt(state, r, c);
+    for (let rr = Math.max(0, r - 4); rr <= Math.min(ROWS - 1, r + 4); rr++) {
       for (let cc = Math.max(0, c - 3); cc <= Math.min(COLS - 1, c + 3); cc++) {
         const t = state.board[rr][cc];
-        if (t && t.p !== u.p && !t.stealth && inRange(u, { r, c }, { r: rr, c: cc })) out.push({ r: rr, c: cc });
+        if (t && t.p !== u.p && !t.stealth && inRange(u, { r, c }, { r: rr, c: cc }, ext)) out.push({ r: rr, c: cc });
       }
     }
     return out;
@@ -320,11 +389,17 @@
 
   // ---------------------------------------------------------------- setup / flow
   function newGame(seed) {
-    const state = { rng: seed | 0, turn: 1, active: 0, winner: null, reason: '', uid: 0, log: [], board: [], traps: [], players: [] };
-    for (let r = 0; r < ROWS; r++) state.board.push(new Array(COLS).fill(null));
+    const state = { rng: seed | 0, turn: 1, active: 0, winner: null, reason: '', uid: 0, log: [], board: [], traps: [], players: [], owner: [], outposts: [] };
+    for (let r = 0; r < ROWS; r++) { state.board.push(new Array(COLS).fill(null)); state.owner.push(new Array(COLS).fill(r < HOME_ROWS ? 0 : r >= ROWS - HOME_ROWS ? 1 : null)); }
+    // 4 outposts in two mirrored pairs (rows 3-7), so neither side starts nearer to them
+    const cand = [];
+    for (let r = 2; r <= 4; r++) for (let c = 0; c < COLS; c++) if (r < 4 || c < KING_C) cand.push({ r, c });
+    shuffle(state, cand);
+    const first = cand[0], second = cand.find((t) => Math.max(Math.abs(t.r - first.r), Math.abs(t.c - first.c)) > 1) || cand[1];
+    for (const t of [first, second]) { state.outposts.push({ r: t.r, c: t.c, kind: null }); state.outposts.push({ r: ROWS - 1 - t.r, c: COLS - 1 - t.c, kind: null }); }
     for (let p = 0; p < 2; p++) {
-      state.board[backRow(p)][KING_C] = { uid: ++state.uid, id: 'KING', p, atk: 0, hp: KING_HP, maxHp: KING_HP, armor: 0, attacked: true, moved: true, fresh: false, trapped: true, maxArmor: 0, stealth: false, ammo: 0, garrison: null, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false };
-      state.players.push({ mana: 0, maxMana: 0, turns: 0, moves: 0, swaps: 0, infHand: [], deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [], infDiscard: [], squadDiscard: [] });
+      state.board[backRow(p)][KING_C] = { uid: ++state.uid, id: 'KING', p, atk: 0, hp: KING_HP, maxHp: KING_HP, armor: 0, attacked: true, moved: true, fresh: false, trapped: true, maxArmor: 0, stealth: false, ammo: 0, garrison: null, poison: 0, stuck: 0, blind: 0, immobile: false, disarmed: false, since: 0 };
+      state.players.push({ mana: 0, maxMana: 0, turns: 0, moves: 0, swaps: 0, infHand: [], deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [], infDiscard: [], squadDiscard: [], legendCd: 0, legendLevel: 0 });
     }
     for (let p = 0; p < 2; p++) for (let i = 0; i < START_HAND; i++) drawToHand(state, p);
     startTurn(state);
@@ -359,15 +434,16 @@
   function startTurn(state) {
     const p = state.active, pl = state.players[p];
     pl.turns++;
-    pl.maxMana = Math.min(MAX_MANA, pl.turns);
+    pl.maxMana = Math.min(MAX_MANA, pl.turns) + heldOutposts(state, p, 'mine').length;
     pl.mana = pl.maxMana;
+    if (pl.legendCd > 0) pl.legendCd--;
     pl.moves = MOVES;
     pl.swaps = 1;
     log(state, `— Turn ${state.turn}: Player ${p + 1} (mana ${pl.mana}) —`);
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       const u = state.board[r][c];
       if (!u || u.p !== p) continue;
-      u.attacked = false; u.moved = false; u.fresh = false; u.trapped = false;
+      u.attacked = false; u.moved = false; u.fresh = false; u.trapped = false; u.steps = LEGEND_STEPS;
       if (u.garrison) { u.garrison.attacked = false; u.garrison.fresh = false; }
       if (u.poison > 0) { u.hp -= 1; u.poison--; log(state, `${CARDS[u.id].name} takes 1 poison damage.`); }
       u.immobile = u.stuck > 0; if (u.stuck > 0) u.stuck--;
@@ -375,7 +451,7 @@
     }
     if (state.turn > 1) drawToHand(state, p);        // the very first player skips the draw on turn 1
     pl.infHand = [];
-    dealInfantry(state, p, 1);
+    dealInfantry(state, p, 1 + heldOutposts(state, p, 'bunker').length);
     cleanup(state);
   }
 
@@ -384,7 +460,13 @@
     if (pl.infHand.length) { pl.infDeck.unshift(...pl.infHand); log(state, `Player ${state.active + 1}'s unplaced infantry goes to the bottom of its deck.`); pl.infHand = []; }
     state.active = 1 - state.active;
     state.turn++;
-    if (state.turn > MAX_TURNS && state.winner == null) { state.winner = 2; state.reason = 'Stalemate: nobody took the castle.'; log(state, state.reason); return; }
+    if (state.turn > MAX_TURNS && state.winner == null) {
+      const t0 = tileCount(state, 0), t1 = tileCount(state, 1), h0 = kingOf(state, 0).hp, h1 = kingOf(state, 1).hp;
+      if (t0 !== t1) { state.winner = t0 > t1 ? 0 : 1; state.reason = `Time is up: Player ${state.winner + 1} owns more tiles (${Math.max(t0, t1)} to ${Math.min(t0, t1)}).`; }
+      else if (h0 !== h1) { state.winner = h0 > h1 ? 0 : 1; state.reason = `Time is up and the land is level: Player ${state.winner + 1}'s castle is healthier.`; }
+      else { state.winner = 2; state.reason = 'Time is up: a dead heat.'; }
+      log(state, state.reason); return;
+    }
     startTurn(state);
   }
 
@@ -393,6 +475,7 @@
       const u = state.board[r][c];
       if (u && u.hp <= 0 && !isKing(u)) {
         log(state, `${CARDS[u.id].name} is destroyed.`);
+        if (u.legend) { state.players[u.p].legendCd = LEGEND_LEVELS[u.level].cost; log(state, `Player ${u.p + 1}'s Legend has fallen; it can be summoned again in ${state.players[u.p].legendCd} turn(s).`); }
         if (u.garrison) { state.board[r][c] = u.garrison; log(state, `${CARDS[u.garrison.id].name} drops out of the wreckage.`); }
         else state.board[r][c] = null;
       }
@@ -439,6 +522,7 @@
   }
 
   function validTargets(state, p, kind) {
+    if (kind === 'tile') return grabCentres(state, p);
     let refs = kind.startsWith('ally') ? allUnits(state, p) : enemiesInReach(state, p);
     if (kind.endsWith('Inf')) refs = refs.filter((x) => isInf(state.board[x.r][x.c]));
     return refs;
@@ -461,6 +545,7 @@
     const u = makeUnit(state, p, id), tile = state.board[cell.r][cell.c];
     if (tile && canGarrison(u, tile)) { tile.garrison = u; return CARDS[id]; }   // an archer placed into a Siege Tower
     state.board[cell.r][cell.c] = u;
+    claim(state, u, cell.r, cell.c);
     enterTile(state, u, cell.r, cell.c);
     return CARDS[id];
   }
@@ -486,6 +571,7 @@
           }
           break;
         }
+        case 'claim': { const got = grabTiles(state, ctx.p, ctx.target); for (const t of got) state.owner[t.r][t.c] = ctx.p; log(state, `Player ${ctx.p + 1} claims ${got.length} tiles.`); break; }
         case 'damage': for (const x of resolveTargets(state, e, ctx)) at(x).hp -= e.n; break;
         case 'rearm': for (const x of resolveTargets(state, e, ctx)) { at(x).attacked = false; if (at(x).garrison) at(x).garrison.attacked = false; } break;
         case 'buff':
@@ -530,9 +616,13 @@
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       const u = state.board[r][c];
       if (!u || u.p !== p || isKing(u)) continue;
-      if (!u.moved && !u.fresh && !u.immobile && (pl.moves > 0 || hasKw(u, 'swift'))) {
+      if (u.legend) {                                  // the legend has its own 3 steps and doesn't use your moves
+        if (!u.fresh && !u.immobile && u.steps > 0) for (const cell of moveDests(state, r, c)) acts.push({ t: 'move', from: { r, c }, cell });
+      } else if (!u.moved && !u.fresh && !u.immobile && (pl.moves > 0 || hasKw(u, 'swift'))) {
         for (const cell of moveDests(state, r, c)) acts.push({ t: 'move', from: { r, c }, cell });
       }
+      const op = outpostAt(state, r, c);                // hold an outpost for a full turn, then build on it
+      if (op && !op.kind && !u.stealth && u.since < pl.turns) for (const kind of Object.keys(OUTPOSTS)) acts.push({ t: 'build', at: { r, c }, kind });
       if (!u.attacked && !u.disarmed && u.atk > 0) attackTargets(state, r, c).forEach((target) => acts.push({ t: 'attack', from: { r, c }, target }));
       const g = u.garrison;
       if (g && !g.attacked && !g.disarmed && g.atk > 0) attackTargets(state, r, c, g).forEach((target) => acts.push({ t: 'attack', from: { r, c }, g: true, target }));
@@ -551,6 +641,9 @@
       }
     }
 
+    if (pl.legendCd === 0 && !legendOf(state, p) && pl.mana >= LEGEND_LEVELS[legendLevel(state, p)].cost) {
+      for (const cell of summonTiles(state, p)) acts.push({ t: 'summon', cell });
+    }
     acts.push({ t: 'end' });
     return acts;
   }
@@ -592,13 +685,28 @@
       const u = state.board[a.from.r][a.from.c], dest = state.board[a.cell.r][a.cell.c];
       state.board[a.from.r][a.from.c] = null;
       u.moved = true;
-      if (!hasKw(u, 'swift')) pl.moves--;
+      if (u.legend) u.steps--;
+      else if (!hasKw(u, 'swift')) pl.moves--;
+      u.since = pl.turns;
       if (dest) { dest.garrison = u; log(state, `${CARDS[u.id].name} climbs into the ${CARDS[dest.id].name}.`); }
       else {
         state.board[a.cell.r][a.cell.c] = u;
+        claim(state, u, a.cell.r, a.cell.c);
         log(state, `${CARDS[u.id].name} ${u.stealth ? 'slips' : 'advances'} to ${tileName(a.cell)}.`);
         enterTile(state, u, a.cell.r, a.cell.c);
       }
+    } else if (a.t === 'summon') {
+      const lv = legendLevel(state, p), L = LEGEND_LEVELS[lv], u = makeUnit(state, p, 'LEGEND');
+      u.atk = L.atk; u.hp = u.maxHp = L.hp; u.armor = u.maxArmor = L.armor; u.legend = true; u.level = lv; u.steps = LEGEND_STEPS;
+      pl.mana -= L.cost;
+      state.board[a.cell.r][a.cell.c] = u;
+      claim(state, u, a.cell.r, a.cell.c);
+      enterTile(state, u, a.cell.r, a.cell.c);
+      log(state, `Player ${p + 1}'s king summons a level ${lv} Legend (${L.cost} mana).`);
+    } else if (a.t === 'build') {
+      const o = outpostAt(state, a.at.r, a.at.c);
+      o.kind = a.kind;
+      log(state, `Player ${p + 1} builds a ${OUTPOSTS[a.kind].name} at ${tileName(a.at)}.`);
     } else if (a.t === 'trap') {
       const u = state.board[a.from.r][a.from.c];
       u.ammo = 0; u.stealth = false;
@@ -635,8 +743,8 @@
     return state;
   }
 
-  const VERSION = 'r13'; // bump whenever a rule or card changes: recorded games replay only on the version that recorded them
-  const api = { VERSION, ROWS, COLS, KING_C, KING_HP, HAND_MAX, START_HAND, MAX_MANA, MOVES, DEFENCE_ZONE, SYM, SUIT_ROLE, CLS_SYM, TRAPS, CARDS, DECK, INF_DECK, newGame, legalActions, applyAction, clone, hasKw, suitOf, isKing, isInf, sameRef, locEq, backRow, dirOf, kingOf, inRange, reachTiles, attackTargets, spawnTiles, spawnTilesFor, moveDests, trapAt, unitAt };
+  const VERSION = 'r14'; // bump whenever a rule or card changes: recorded games replay only on the version that recorded them
+  const api = { VERSION, ROWS, COLS, KING_C, KING_HP, HAND_MAX, START_HAND, MAX_MANA, MOVES, MAX_TURNS, HOME_ROWS, DEFENCE_ZONE, OUTPOSTS, LEGEND_LEVELS, LEGEND_STEPS, levelFor, legendLevel, legendOf, summonTiles, tileCount, grabTiles, grabCentres, outpostAt, heldOutposts, ownerAt, SYM, SUIT_ROLE, CLS_SYM, TRAPS, CARDS, DECK, INF_DECK, newGame, legalActions, applyAction, clone, hasKw, suitOf, isKing, isInf, sameRef, locEq, backRow, dirOf, kingOf, inRange, reachTiles, attackTargets, spawnTiles, spawnTilesFor, moveDests, trapAt, unitAt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TBC = api;
 })(typeof window !== 'undefined' ? window : globalThis);

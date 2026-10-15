@@ -1,11 +1,16 @@
 # TBC — King's Table (prototype)
 
-War-sim card game on a shared 7x8 grid: march up the table and destroy the enemy castle (king).
+War-sim card game on a shared 7x9 grid: march up the table and destroy the enemy castle (king), or own more land when the rounds run out.
 Open `index.html` to play against the AI. `node test.js` runs rules tests and playouts.
 
-## Board
-7 wide x 8 deep. Your castle (king) is at the bottom, theirs at the top. New cards appear on your back row.
+## Board and land
+7 wide x 9 deep. Your castle (king) is at the bottom, theirs at the top. New cards appear on your back row.
 **Defence** units (▣ infantry and ♠ cards) can also be placed anywhere within 2 tiles of your king.
+- **Land:** rows 1-4 start as yours, rows 6-9 as theirs, row 5 is neutral. **Landing on a tile claims it** (placing, moving, a Legend's steps). It stays yours until an enemy lands on it. Hidden rogues claim nothing.
+- **♣ Land Grab** (2 in the squad deck, 3 mana): claim the 3x3 around a tile that touches your land. Tiles holding enemy units are not taken.
+- **Outposts ⚑:** 4 marked tiles in two mirrored pairs. A unit that has stood on one since your previous turn lets you build there (free, once per tile): **🏹 Lookout** (a ranged unit on it shoots one tile further), **⛺ Bunker** (+1 free infantry each turn, and your infantry may be placed around it), **⛏ Gold Mine** (+1 mana each turn). They work for whoever is standing on them.
+- **King's Legend ★:** summon it next to your king (button). Level 1/2/3 by tiles owned (under 31 / 31-37 / 38+) sets its stats and its cost in mana (1/2/3). Stats are roughly twice a normal unit (level 1: 4 attack, 3 armour, 6 health). It takes 3 steps a turn (separate from your 3 moves), claiming each tile it lands on. One at a time; after it falls you wait as many turns as it cost.
+- **Time limit:** 40 rounds each. If nobody has taken a castle, whoever owns more tiles wins (a tie goes to the healthier castle).
 
 ## Per turn
 1. **Draw** 1 squad card. You start with 5 cards and hold up to 8 (a card drawn into a full hand goes to the bottom of the deck, so nothing is lost). The first player skips the draw on turn 1.
@@ -53,7 +58,7 @@ x x x      - - -
 | Infantry defence; all ♠ walls; ♦ Siege Tower | Defence (no attack) |
 
 ## Win
-Destroy the enemy king (30 HP) on their back row. (A game that reaches turn 300 is a stalemate.)
+Destroy the enemy king (30 HP) on their back row, or own more tiles when the 40 rounds run out.
 
 ## Cards
 - **Infantry (38)**, stats are attack / armour plates / health:
@@ -61,7 +66,7 @@ Destroy the enemy king (30 HP) on their back row. (A game that reaches turn 300 
   - ➶ Ranged ×10 (Archer, Slinger): 1 / 1 / 2
   - ▣ Defence ×10 (Shieldman, Guard, Pikeman): 0 / 3 / 3, counters
   - 🗡 Rogues ×8 (Poisoner, Trapper, Saboteur, Bomber ×2 each): 1 / 2 / 2, hidden
-- **Squad deck (53):** ♦ Siege (+ Siege Tower) · ♠ Defence walls (4 to 6 health, armour 1 to 4, no attack) · ♣ Offence · ♥ Long range. Units and boosts mixed.
+- **Squad deck (55):** ♦ Siege (+ Siege Tower) · ♠ Defence walls (4 to 6 health, armour 1 to 4, no attack) · ♣ Offence · ♥ Long range. Units and boosts mixed, plus 2 Land Grabs.
 
 ## Opponent pacing
 The AI takes about 9 actions a turn and they are replayed one by one so you can follow them. Before it moves it **thinks for a random 1-10 seconds** (a 💭 indicator shows). The side panel's **Opponent** settings (remembered in your browser) choose the pacing: *speed* (Normal / Fast / Instant) and *thinking* (once per turn, before every action, or off). **Skip opponent** ends the thinking and finishes its turn at once.
