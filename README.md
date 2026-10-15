@@ -6,14 +6,30 @@ Open `index.html` to play against the AI. `node test.js` runs rules tests and pl
 ## Per turn
 1. **Deploy 1 infantry** (free, top of your infantry deck). It appears on your back row.
 2. **Reveal a squad card** (top of your 52-card deck). Play it (units appear on your back row, boosts take effect) or **hold** it in your hand (max 3). You may play **one** squad card per turn, the revealed one or one from hand. An unused revealed card is discarded.
-3. **Move 1 unit** one tile, forward or sideways. (Champion/Scout-style *swift* units move without using your move.)
+3. **Move 1 unit** one tile, forward or sideways. (*Swift* units, like the Champion, move without using your move.)
 4. **Attack:** every unit may attack once per turn, for free.
 
-## Reach
-- **Melee** (infantry, defence, siege): the 8 tiles around it. The target strikes back.
-- **➶ Ranged** (archers, slingers): up to 2 tiles away, in front or beside, never behind. No retaliation.
-- **♥ Artillery**: up to 2 tiles away in **any** direction. No retaliation.
+## Reach (three shapes, from the design sketch)
+Forward is toward the enemy castle.
+```
+MELEE      RANGE       DEFENCE
+x x x      x x x       x x x
+x M x      x x x       x D x
+x x x      - - -
+             R
+```
+- **Melee:** all 8 tiles around the unit.
+- **Range:** the 2nd and 3rd rows ahead, 3 tiles wide. The row right in front is a blind spot.
+- **Defence:** the 3 tiles ahead plus left and right, never behind.
+- A unit **strikes back** only if the attacker is adjacent and inside the defender's own shape. Range attackers are never hit back.
 - **Armour** reduces every hit. **Breach** (♦ siege) ignores armour and does double to ♠.
+- Damage boosts only hit enemies that one of *your* units could attack. Nothing hits across the whole board.
+
+| Cards | Shape |
+|---|---|
+| Infantry melee; ♣ commanders; ♦ rams and heavy siege | Melee |
+| Infantry archers/slingers; all ♥ archers; ♦ catapults (Mangonel, Catapult, Trebuchet); Marksman | Range |
+| Infantry defence; all ♠ fortresses | Defence |
 
 ## Win
 Destroy the enemy king (30 HP) on their back row, or the opponent runs out of squad cards.

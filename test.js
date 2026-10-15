@@ -79,17 +79,29 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
   E.applyAction(s, play);
   assert.strictEqual(acts(s, 'play').length, 0, 'one squad card per turn');
 }
-{ // melee reaches 1 tile, ranged forward 2, artillery 2 in every direction
-  const s = fresh();
-  put(s, 0, 3, 3, 'iSword'); put(s, 1, 4, 3, 'iShield'); put(s, 1, 5, 3, 'iSword');
-  let t = acts(s, 'attack').map((a) => a.target.r);
-  assert.deepStrictEqual(t, [4], 'melee only hits the adjacent tile');
-  const s2 = fresh();
-  put(s2, 0, 3, 3, 'iArcher'); put(s2, 1, 5, 3, 'iShield'); put(s2, 1, 1, 3, 'iSword');
-  assert.deepStrictEqual(acts(s2, 'attack').map((a) => a.target.r), [5], 'archer shoots 2 ahead but not behind');
-  const s3 = fresh();
-  put(s3, 0, 3, 3, 'H2'); put(s3, 1, 5, 3, 'iShield'); put(s3, 1, 1, 3, 'iSword'); put(s3, 1, 6, 3, 'iSword');
-  assert.deepStrictEqual(acts(s3, 'attack').map((a) => a.target.r).sort(), [1, 5], 'artillery hits 2 in any direction');
+{ // the three reach shapes from the sketch (player 0 faces up the board, row+)
+  const hits = (s) => acts(s, 'attack').map((a) => `${a.target.r},${a.target.c}`).sort();
+  // melee: the 8 tiles around it
+  const m = fresh();
+  put(m, 0, 3, 3, 'iSword');
+  for (const [r, c] of [[2,2],[2,3],[2,4],[3,2],[3,4],[4,2],[4,3],[4,4]]) put(m, 1, r, c, 'iSpear');
+  put(m, 1, 5, 3, 'iSpear');
+  assert.strictEqual(hits(m).length, 8, 'melee hits all 8 neighbours'); assert(!hits(m).includes('5,3'));
+  // range: rows 2 and 3 ahead, 3 wide; blind spot right in front; nothing behind
+  const r = fresh();
+  put(r, 0, 3, 3, 'iArcher');
+  for (const [rr, c] of [[4,3],[5,2],[5,3],[5,4],[5,5],[6,2],[6,4],[6,5],[2,3],[3,4]]) put(r, 1, rr, c, 'iSpear');
+  assert.deepStrictEqual(hits(r), ['5,2','5,3','5,4','6,2','6,4'], 'range = 2nd and 3rd rows ahead, 3 wide');
+  // defence: 3 in front plus left and right, never behind
+  const d = fresh();
+  put(d, 0, 3, 3, 'iPike');
+  for (const [rr, c] of [[4,2],[4,3],[4,4],[3,2],[3,4],[2,3],[2,2],[5,3]]) put(d, 1, rr, c, 'iSpear');
+  assert.deepStrictEqual(hits(d), ['3,2','3,4','4,2','4,3','4,4'], 'defence = front arc + sides');
+  // player 1 faces down
+  const q = fresh();
+  put(q, 1, 5, 3, 'iArcher'); put(q, 0, 3, 3, 'iSpear'); put(q, 0, 7, 3, 'iSpear');
+  E.applyAction(q, { t: 'end' });
+  assert.deepStrictEqual(hits(q), ['2,3'.replace('2','3')], 'player 1 shoots down the board');
 }
 { // armour, breach, retaliation, no retaliation vs ranged
   const s = fresh();
@@ -102,9 +114,14 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
   attack(s2, { r: 3, c: 3 }, { r: 4, c: 3 });
   assert.strictEqual(s2.board[4][3].hp, 1, 'ram deals double to a fortress');
   const s3 = fresh();
-  put(s3, 0, 3, 3, 'iArcher'); put(s3, 1, 4, 3, 'iSword');
-  attack(s3, { r: 3, c: 3 }, { r: 4, c: 3 });
-  assert.strictEqual(s3.board[3][3].hp, 1, 'no retaliation against ranged');
+  put(s3, 0, 3, 3, 'iArcher'); put(s3, 1, 5, 3, 'iSword');
+  attack(s3, { r: 3, c: 3 }, { r: 5, c: 3 });
+  assert.strictEqual(s3.board[3][3].hp, 1, 'no retaliation against range');
+  // a defender cannot strike back at an attacker standing behind it
+  const s4 = fresh();
+  put(s4, 0, 5, 3, 'iSword'); put(s4, 1, 4, 3, 'iShield');   // sword is behind the shield (shield faces down)
+  attack(s4, { r: 5, c: 3 }, { r: 4, c: 3 });
+  assert.strictEqual(s4.board[5][3].hp, 2, 'no retaliation from behind');
 }
 { // each unit attacks once per turn; rearm boosts restore it
   const s = fresh();
@@ -135,6 +152,20 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
   const before = E.INF_DECK.length;
   E.applyAction(s2, { t: 'play', hand: 0 });
   assert.strictEqual(s2.board[0].filter((u) => u && !E.isKing(u)).length, 3, 'conscription fills the back row');
+}
+{ // damage boosts only work on enemies inside the reach of one of your units
+  const s = fresh();
+  put(s, 1, 7, 3, 'iSword');                       // far away
+  s.players[0].hand = ['H9', 'H7'];                // Fire Arrows (targeted) and Volley (area)
+  assert.strictEqual(acts(s, 'play').length, 0, 'nothing in reach, so neither boost can be played');
+  put(s, 0, 5, 3, 'iArcher');                      // range reaches rows 7 and 8 -> row 7 target
+  const pl = acts(s, 'play');
+  assert(pl.some((a) => a.hand === 0 && a.target.r === 7), 'Fire Arrows can hit what the archer could');
+  assert(pl.some((a) => a.hand === 1), 'Volley is playable with an enemy in reach');
+  const s2 = fresh();
+  put(s2, 1, 7, 3, 'iSword'); put(s2, 1, 4, 5, 'iSword'); put(s2, 0, 3, 3, 'iSpear');
+  s2.players[0].hand = ['H9'];
+  assert.strictEqual(acts(s2, 'play').length, 0, 'no unit of mine reaches either enemy');
 }
 { // squad deck-out loses
   const s = fresh();

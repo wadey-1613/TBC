@@ -19,12 +19,14 @@
   const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
   // ---------------------------------------------------------------- cards
-  // Keywords:  breach    melee that ignores armour and does double to ♠
-  //            ranged    hits enemies up to 2 tiles away, in front or beside (never behind), no retaliation
-  //            artillery hits enemies up to 2 tiles away in ANY direction, no retaliation
-  //            swift     its move doesn't use your one move per turn
-  // Everything else is melee: it hits the 8 tiles around it, and the target strikes back.
-  // Targets: enemyUnit | enemyInf | allyUnit | allyInf   (units only, never kings)
+  // Every unit attacks with ONE of three reach shapes (forward = toward the enemy castle):
+  //   melee   the 8 tiles around it
+  //   range   the 2nd and 3rd rows ahead, 3 tiles wide (the row right in front is a blind spot)
+  //   defence the 3 tiles in front, plus left and right (nothing behind)
+  // Keywords:  breach  ignores armour and does double damage to ♠
+  //            swift   its move doesn't use your one move per turn
+  // A defender strikes back only if the attacker is adjacent AND inside the defender's own shape.
+  // Targets: enemyUnit | enemyInf are enemies inside the reach of one of YOUR units. allyUnit | allyInf are yours.
   const CARDS = {};
   const reg = (c) => { CARDS[c.id] = Object.assign({ kw: [], text: '', armor: 0, atk: 0, hp: 0 }, c); return CARDS[c.id]; };
 
@@ -36,27 +38,27 @@
   ];
   const INF_DECK = [];
   for (const [id, name, cls, atk, hp, armor, n] of INF) {
-    reg({ id, name, kind: 'unit', inf: true, cls, atk, hp, armor, kw: cls === 'ranged' ? ['ranged'] : [] });
+    reg({ id, name, kind: 'unit', inf: true, cls, atk, hp, armor, reach: cls === 'ranged' ? 'range' : cls === 'defence' ? 'defence' : 'melee' });
     for (let k = 0; k < n; k++) INF_DECK.push(id);
   }
 
   // ---- squad deck (52 cards)
   const unit = (suit, rank, name, atk, hp, armor, extra) => reg(Object.assign({ id: suit + rank, suit, rank, name, kind: 'unit', atk, hp, armor }, extra));
   const spell = (suit, rank, name, text, effects, extra) => reg(Object.assign({ id: suit + rank, suit, rank, name, kind: 'spell', text, effects }, extra));
-  const B = ['breach'], A = ['artillery'];
+  const B = ['breach'];
 
   // ♦ Siege — big units that break defences
   unit('D', 'A', 'Ram', 4, 3, 0, { kw: B });
   unit('D', '2', 'Ladder Crew', 3, 5, 0, { kw: B });
-  unit('D', '3', 'Mangonel', 5, 3, 0, { kw: B });
+  unit('D', '3', 'Mangonel', 5, 3, 0, { kw: B, reach: 'range', text: 'Siege lob: hits the 2nd and 3rd rows ahead.' });
   unit('D', '4', 'Ballista Cart', 5, 5, 0, { kw: B });
-  unit('D', '5', 'Catapult', 6, 4, 0, { kw: B });
+  unit('D', '5', 'Catapult', 6, 4, 0, { kw: B, reach: 'range', text: 'Siege lob: hits the 2nd and 3rd rows ahead.' });
   unit('D', '6', 'Siege Engine', 6, 6, 0, { kw: B });
-  unit('D', '7', 'Trebuchet', 8, 4, 0, { kw: B });
+  unit('D', '7', 'Trebuchet', 8, 4, 0, { kw: B, reach: 'range', text: 'Siege lob: hits the 2nd and 3rd rows ahead.' });
   unit('D', '8', 'Juggernaut', 8, 7, 0, { kw: B });
   unit('D', '9', 'Behemoth', 10, 8, 0, { kw: B });
   unit('D', '10', 'Colossus', 12, 10, 0, { kw: B });
-  spell('D', 'J', 'Sapper Charge', 'Deal 6 damage to an enemy unit.', [{ op: 'damage', n: 6, to: 'target' }], { target: 'enemyUnit' });
+  spell('D', 'J', 'Sapper Charge', 'Deal 6 damage to an enemy unit in your reach.', [{ op: 'damage', n: 6, to: 'target' }], { target: 'enemyUnit' });
   spell('D', 'Q', 'Battering Charge', 'Your Siege units may attack again and get +2 attack.', [{ op: 'rearm', to: 'allySuit', suit: 'D' }, { op: 'buff', atk: 2, hp: 0, to: 'allySuit', suit: 'D' }]);
   unit('D', 'K', 'Siege Master', 3, 6, 0, { kw: B, text: 'Play: your Siege units get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'allySuit', suit: 'D' }] });
 
@@ -90,22 +92,27 @@
   unit('C', 'Q', 'Captain', 3, 4, 0, { text: 'Play: your infantry get +1 attack.', effects: [{ op: 'buff', atk: 1, hp: 0, to: 'allyInf' }] });
   unit('C', 'K', 'General', 4, 6, 0, { text: 'Play: all your units get +1/+1.', effects: [{ op: 'buff', atk: 1, hp: 1, to: 'allyUnits' }] });
 
-  // ♥ Long range — artillery that hits in every direction, plus tactics
-  unit('H', 'A', 'Watchtower', 2, 4, 0, { kw: A });
-  unit('H', '2', 'Longbowmen', 3, 3, 0, { kw: A });
-  unit('H', '3', 'Crossbow Battery', 4, 3, 0, { kw: A });
-  unit('H', '4', 'Heavy Crossbow', 5, 4, 0, { kw: A });
-  unit('H', '5', 'Siege Archers', 6, 4, 0, { kw: A });
-  spell('H', '6', 'Eagle Eye', 'Deal 3 damage to any enemy unit.', [{ op: 'damage', n: 3, to: 'target' }], { target: 'enemyUnit' });
-  spell('H', '7', 'Volley', 'Deal 2 damage to all enemy infantry.', [{ op: 'damage', n: 2, to: 'enemyInf' }]);
-  spell('H', '8', 'Arrow Storm', 'Deal 3 damage to all enemy units.', [{ op: 'damage', n: 3, to: 'enemyUnits' }]);
-  spell('H', '9', 'Fire Arrows', 'Deal 4 damage to an enemy infantry.', [{ op: 'damage', n: 4, to: 'target' }], { target: 'enemyInf' });
+  // ♥ Long range — archers and crossbows that shoot over the front line, plus tactics
+  unit('H', 'A', 'Watchtower', 2, 4, 0, {});
+  unit('H', '2', 'Longbowmen', 3, 3, 0, {});
+  unit('H', '3', 'Crossbow Battery', 4, 3, 0, {});
+  unit('H', '4', 'Heavy Crossbow', 5, 4, 0, {});
+  unit('H', '5', 'Siege Archers', 6, 4, 0, {});
+  spell('H', '6', 'Eagle Eye', 'Deal 3 damage to an enemy unit in your reach.', [{ op: 'damage', n: 3, to: 'target' }], { target: 'enemyUnit' });
+  spell('H', '7', 'Volley', 'Deal 2 damage to all enemy infantry in your reach.', [{ op: 'damage', n: 2, to: 'enemyInf' }]);
+  spell('H', '8', 'Arrow Storm', 'Deal 3 damage to all enemy units in your reach.', [{ op: 'damage', n: 3, to: 'enemyUnits' }]);
+  spell('H', '9', 'Fire Arrows', 'Deal 4 damage to an enemy infantry in your reach.', [{ op: 'damage', n: 4, to: 'target' }], { target: 'enemyInf' });
   spell('H', '10', 'Spyglass', 'Draw 2 cards into your hand.', [{ op: 'draw', n: 2 }]);
-  unit('H', 'J', 'Marksman', 4, 2, 0, { kw: A, target: 'enemyInf', text: 'Play: deal 2 damage to an enemy infantry.', effects: [{ op: 'damage', n: 2, to: 'target' }] });
+  unit('H', 'J', 'Marksman', 4, 2, 0, { target: 'enemyInf', text: 'Play: deal 2 damage to an enemy infantry in your reach.', effects: [{ op: 'damage', n: 2, to: 'target' }] });
   spell('H', 'Q', 'Scout Report', 'Draw a card into your hand.', [{ op: 'draw', n: 1 }]);
-  unit('H', 'K', 'Master Archer', 6, 5, 0, { kw: A });
+  unit('H', 'K', 'Master Archer', 6, 5, 0, {});
 
-  CARDS.KING = { id: 'KING', kind: 'king', name: 'King', atk: 0, hp: KING_HP, armor: 0, kw: [], text: 'Lose your king and you lose the game.' };
+  for (const id of Object.keys(CARDS)) {
+    const c = CARDS[id];
+    if (!c.reach) c.reach = c.suit === 'S' ? 'defence' : c.suit === 'H' ? 'range' : 'melee';
+  }
+
+  CARDS.KING = { id: 'KING', kind: 'king', name: 'King', reach: 'melee', atk: 0, hp: KING_HP, armor: 0, kw: [], text: 'Lose your king and you lose the game.' };
   const DECK = Object.keys(CARDS).filter((id) => !CARDS[id].inf && id !== 'KING');
 
   // ---------------------------------------------------------------- helpers
@@ -150,14 +157,21 @@
     return out;
   }
 
+  // is `to` inside the reach shape of unit `u` standing at `from`?
   function inRange(u, from, to) {
-    const dr = to.r - from.r, dc = to.c - from.c, d = Math.max(Math.abs(dr), Math.abs(dc));
-    if (d < 1) return false;
-    if (hasKw(u, 'artillery')) return d <= 2;
-    if (hasKw(u, 'ranged')) return d <= 2 && dr * dirOf(u.p) >= 0;
-    return d === 1;
+    const dr = to.r - from.r, dc = to.c - from.c, fwd = dr * dirOf(u.p), side = Math.abs(dc);
+    switch (CARDS[u.id].reach) {
+      case 'range': return (fwd === 2 || fwd === 3) && side <= 1;
+      case 'defence': return (fwd === 1 && side <= 1) || (fwd === 0 && side === 1);
+      default: return Math.max(Math.abs(dr), side) === 1;
+    }
   }
-  const isMeleeUnit = (u) => !hasKw(u, 'artillery') && !hasKw(u, 'ranged');
+  // every tile of the board inside a unit's reach shape (for the UI)
+  function reachTiles(state, r, c) {
+    const u = state.board[r][c], out = [];
+    for (let rr = 0; rr < ROWS; rr++) for (let cc = 0; cc < COLS; cc++) if (inRange(u, { r, c }, { r: rr, c: cc })) out.push({ r: rr, c: cc });
+    return out;
+  }
 
   function attackDamage(att, def) {
     if (hasKw(att, 'breach')) return suitOf(def) === 'S' ? att.atk * 2 : att.atk;
@@ -167,8 +181,8 @@
 
   function attackTargets(state, r, c) {
     const u = state.board[r][c], out = [];
-    for (let rr = Math.max(0, r - 2); rr <= Math.min(ROWS - 1, r + 2); rr++) {
-      for (let cc = Math.max(0, c - 2); cc <= Math.min(COLS - 1, c + 2); cc++) {
+    for (let rr = Math.max(0, r - 3); rr <= Math.min(ROWS - 1, r + 3); rr++) {
+      for (let cc = Math.max(0, c - 3); cc <= Math.min(COLS - 1, c + 3); cc++) {
         const t = state.board[rr][cc];
         if (t && t.p !== u.p && inRange(u, { r, c }, { r: rr, c: cc })) out.push({ r: rr, c: cc });
       }
@@ -205,7 +219,7 @@
 
   function startTurn(state) {
     const p = state.active, pl = state.players[p];
-    pl.deploys = state.turn === 2 ? 2 : 1; // the second player's first turn gets a bonus deploy
+    pl.deploys = 1; // the second player's first turn gets a bonus deploy
     pl.moves = 1;
     pl.squadLeft = 1;
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const u = state.board[r][c]; if (u && u.p === p) { u.attacked = false; u.moved = false; } }
@@ -238,9 +252,22 @@
   }
 
   // ---------------------------------------------------------------- effects
+  // enemy units (never kings) inside the reach of at least one of p's units that has an attack
+  function enemiesInReach(state, p) {
+    const seen = new Set(), out = [];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const u = state.board[r][c];
+      if (!u || u.p !== p || isKing(u) || u.atk <= 0) continue;
+      for (const t of attackTargets(state, r, c)) {
+        const e = state.board[t.r][t.c], key = t.r * COLS + t.c;
+        if (!isKing(e) && !seen.has(key)) { seen.add(key); out.push(t); }
+      }
+    }
+    return out;
+  }
+
   function validTargets(state, p, kind) {
-    const side = kind.startsWith('ally') ? p : 1 - p;
-    let refs = allUnits(state, side);
+    let refs = kind.startsWith('ally') ? allUnits(state, p) : enemiesInReach(state, p);
     if (kind.endsWith('Inf')) refs = refs.filter((x) => isInf(state.board[x.r][x.c]));
     return refs;
   }
@@ -252,8 +279,8 @@
       case 'allyUnits': return allUnits(state, p);
       case 'allyInf': return allUnits(state, p).filter((x) => isInf(at(x)));
       case 'allySuit': return allUnits(state, p).filter((x) => suitOf(at(x)) === e.suit);
-      case 'enemyInf': return allUnits(state, 1 - p).filter((x) => isInf(at(x)));
-      case 'enemyUnits': return allUnits(state, 1 - p);
+      case 'enemyInf': return enemiesInReach(state, p).filter((x) => isInf(at(x)));
+      case 'enemyUnits': return enemiesInReach(state, p);
       default: return [];
     }
   }
@@ -306,6 +333,8 @@
       for (const { id, i } of sources) {
         const c = CARDS[id];
         const targets = c.target ? validTargets(state, p, c.target) : [];
+        const area = c.kind === 'spell' && (c.effects || []).find((e) => e.op === 'damage' && e.to !== 'target');
+        if (area && !resolveTargets(state, area, { p }).length) continue; // area strikes need something in reach
         if (c.kind === 'spell') {
           if (c.target) targets.forEach((target) => acts.push({ t: 'play', hand: i, target }));
           else acts.push({ t: 'play', hand: i });
@@ -378,7 +407,8 @@
       const dmg = attackDamage(att, def);
       def.hp -= dmg;
       log(state, `${CARDS[att.id].name} hits ${CARDS[def.id].name} for ${dmg}${dmg === 0 ? ' (blocked by armour)' : ''}.`);
-      if (isMeleeUnit(att) && def.atk > 0) {
+      const adjacent = Math.max(Math.abs(a.from.r - a.target.r), Math.abs(a.from.c - a.target.c)) === 1;
+      if (adjacent && def.atk > 0 && inRange(def, a.target, a.from)) {
         const back = attackDamage(def, att);
         att.hp -= back;
         if (back) log(state, `${CARDS[def.id].name} strikes back for ${back}.`);
@@ -388,7 +418,7 @@
     return state;
   }
 
-  const api = { ROWS, COLS, KING_C, KING_HP, HAND_MAX, SYM, SUIT_ROLE, CLS_SYM, CARDS, DECK, INF_DECK, newGame, legalActions, applyAction, clone, hasKw, suitOf, isKing, isInf, sameRef, locEq, backRow, dirOf, kingOf, inRange, attackTargets, spawnTiles };
+  const api = { ROWS, COLS, KING_C, KING_HP, HAND_MAX, SYM, SUIT_ROLE, CLS_SYM, CARDS, DECK, INF_DECK, newGame, legalActions, applyAction, clone, hasKw, suitOf, isKing, isInf, sameRef, locEq, backRow, dirOf, kingOf, inRange, reachTiles, attackTargets, spawnTiles };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TBC = api;
 })(typeof window !== 'undefined' ? window : globalThis);

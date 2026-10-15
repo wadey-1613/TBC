@@ -13,6 +13,7 @@
   #board { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; align-content:start; }
   .cell { height:68px; border:1px solid #2a3144; border-radius:6px; position:relative; background:#181c26; }
   .cell.home0 { background:#16253a; } .cell.home1 { background:#3a1b22; }
+  .cell.reach { background:rgba(242,193,78,.08); box-shadow: inset 0 0 0 2px rgba(242,193,78,.3); }
   .cell.dest { border:2px solid var(--gold); background:rgba(242,193,78,.14); cursor:pointer; }
   .cell .lbl { position:absolute; left:4px; bottom:2px; font-size:9px; color:#4b556d; }
   .unit { position:absolute; inset:0; border-radius:5px; padding:2px 5px; display:flex; flex-direction:column; justify-content:space-between; background:linear-gradient(#2c3348,#222839); border-top:4px solid var(--line); overflow:hidden; }
@@ -55,6 +56,7 @@
   #log { flex:1; min-height:120px; max-height:300px; overflow:auto; font-size:11px; color:var(--dim); background:var(--panel); border-radius:8px; padding:8px; }
   #log div { padding:2px 0; border-bottom:1px solid #262c3b; }
   #help { font-size:11px; color:var(--dim); background:var(--panel); border-radius:8px; padding:8px; }
+  #help pre { margin:4px 0; font:11px/1.2 ui-monospace,monospace; color:var(--text); }
   #help b.S { color:var(--S); } #help b.C { color:var(--C); } #help b.D { color:var(--D); } #help b.H { color:var(--H); }
   #overlay { position:fixed; inset:0; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; z-index:10; }
   #overlay.show { display:flex; }
@@ -80,8 +82,14 @@
       <b>Goal:</b> march up the table and destroy the enemy castle (king). Your castle is at the bottom.<br>
       <b>Each turn:</b> deploy 1 infantry (free) · reveal a squad card and play it or hold it · play 1 squad card · move 1 unit a step (forward or sideways) · every unit may attack once.
       New cards appear on your back row (blue).<br>
-      <b>Reach:</b> melee hits adjacent tiles and is hit back. ➶ Ranged hits 2 tiles in front or beside. <b class="H">♥ Artillery</b> hits 2 tiles in any direction. Neither takes retaliation.
-      <b class="D">♦ Siege</b> ignores armour. <b class="S">♠</b> Defence. <b class="C">♣</b> Offence. Right-click / Esc cancels.
+      <b>Reach shapes</b> (up is toward the enemy castle):
+      <pre>MELEE      RANGE       DEFENCE
+x x x      x x x       x x x
+x M x      x x x       x D x
+x x x      - - -         
+             R</pre>
+      <b>Melee</b> hits all 8 tiles around it. <b>Range</b> hits the 2nd and 3rd rows ahead (blind spot right in front). <b>Defence</b> hits the 3 tiles ahead plus left and right, never behind.
+      A unit strikes back only if the attacker is adjacent and inside its own shape. <b class="D">♦ Siege</b> ignores armour. Damage boosts can only hit enemies one of your units could attack. Select a unit to see its reach. Right-click / Esc cancels.
     </div>
   </div>
 </div>

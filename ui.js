@@ -100,18 +100,20 @@
 
   // ------------------------------------------------------------ rendering
   const red = (suit) => suit === 'H' || suit === 'D';
-  const kwText = (c) => c.kw.join(' · ');
+  const REACH = { melee: 'melee · 8 around', range: 'range · 2nd & 3rd row ahead', defence: 'defence · front arc' };
+  const kwText = (c) => (c.kind === 'spell' ? c.kw : [REACH[c.reach]].concat(c.kw)).join(' · ');
 
   function barHtml(p) {
     const pl = state.players[p], k = E.kingOf(state, p);
     return `<b>${p === ME ? 'You' : 'Opponent'}</b><span>Castle <b>♥${k.hp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span>Squad deck <b>${pl.deck.length}</b></span><span>Infantry <b>${pl.infDeck.length}</b></span><span class="grow"></span>${state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
   }
 
+  let reachSet = new Set();
   function tileHtml(r, c, rem) {
     const u = state.board[r][c], ref = { r, c };
     const isDest = pending !== null && pending.cell === undefined && rem.some((a) => locEq(a.cell, ref));
     const home = r === 0 ? ' home0' : r === ROWS - 1 ? ' home1' : '';
-    const attrs = `class="cell${home}${isDest ? ' dest' : ''}" data-r="${r}" data-c="${c}"`;
+    const attrs = `class="cell${home}${isDest ? ' dest' : ''}${reachSet.has(r * COLS + c) ? ' reach' : ''}" data-r="${r}" data-c="${c}"`;
     if (!u) return `<div ${attrs}></div>`;
     const k = CARDS[u.id];
     const isTarget = pending !== null && pending.target === undefined && rem.some((a) => a.target && sameRef(a.target, ref));
@@ -119,7 +121,7 @@
     const sel = pending && pending.from && locEq(pending.from, ref);
     const cls = ['unit', 'p' + u.p, k.inf ? 'I' : (k.suit || ''), isKing(u) ? 'king' : '', ready ? 'ready' : '', isTarget ? 'target' : '', sel ? 'selected' : '', u.attacked && !isKing(u) ? 'spent' : ''].join(' ');
     const rk = isKing(u) ? '♔' : k.inf ? CLS_SYM[k.cls] : `${k.rank}${SYM[k.suit]}`;
-    const title = `${k.name}${k.inf ? ' — ' + k.cls + ' infantry' : k.suit ? ' — ' + SUIT_ROLE[k.suit] : ''}${k.kw.length ? ' [' + k.kw.join(', ') + ']' : ''}${k.text ? ': ' + k.text : ''}`;
+    const title = `${k.name}${k.inf ? ' — ' + k.cls + ' infantry' : k.suit ? ' — ' + SUIT_ROLE[k.suit] : ''} [${isKing(u) ? 'castle' : REACH[k.reach]}${k.kw.length ? ', ' + k.kw.join(', ') : ''}]${k.text ? ': ' + k.text : ''}`;
     const stats = isKing(u)
       ? `<span class="h ${u.hp < u.maxHp ? 'hurt' : ''}">♥${u.hp}</span>${u.armor ? `<span class="ar">🛡${u.armor}</span>` : ''}`
       : `<span class="a">⚔${u.atk}</span>${u.armor ? `<span class="ar">🛡${u.armor}</span>` : ''}<span class="h ${u.hp < u.maxHp ? 'hurt' : ''}">♥${u.hp}</span>`;
@@ -128,6 +130,8 @@
 
   function boardHtml() {
     const rem = pending ? remaining() : [];
+    reachSet = new Set();
+    if (pending && pending.from) E.reachTiles(state, pending.from.r, pending.from.c).forEach((t) => reachSet.add(t.r * COLS + t.c));
     let html = '';
     for (let r = ROWS - 1; r >= 0; r--) for (let c = 0; c < COLS; c++) html += tileHtml(r, c, rem);
     return html;
@@ -179,7 +183,7 @@
       const needCell = remaining().some((a) => a.cell !== undefined);
       return needCell && pending.cell === undefined ? 'Choose a tile on your back row.' : 'Choose a target.';
     }
-    return 'Choose an enemy to attack (gold), or a tile to move into (forward or sideways).';
+    return 'The shaded tiles are this unit\'s reach. Click an enemy in reach (gold) to attack, or an empty tile to move (forward or sideways).';
   }
 
   function render() {
