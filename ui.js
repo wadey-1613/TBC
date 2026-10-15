@@ -252,8 +252,10 @@
     const gar = u.garrison ? `<div class="gar" title="${CARDS[u.garrison.id].name} is inside: it shoots from here and can't be targeted. It drops out if the tower falls.">🏹 ${CARDS[u.garrison.id].name} ⚔${u.garrison.atk} ♥${u.garrison.hp}/${u.garrison.maxHp}</div>` : '';
     const num = (delta ? `<div class="float ${delta < 0 ? 'dmg' : 'heal'}">${delta > 0 ? '+' : ''}${delta}</div>` : '')
       + (ch.ar ? `<div class="float arm" ${delta ? 'style="top:36px"' : ''}>🛡${ch.ar > 0 ? '+' : ''}${ch.ar}</div>` : '');
-    const bg = k.inf ? ` style="background-image:linear-gradient(rgba(20,24,34,.1),rgba(20,24,34,.78)),url(${ART[k.cls]});background-size:cover;background-position:center top"` : '';
-    return `<div ${attrs}><div class="${cls}"${bg} title="${title}"><span class="rk">${rk}</span>${tl ? `<span class="tl">${tl}</span>` : ''}<div class="nm">${k.name}</div>${gar}`
+    const glyph = isKing(u) ? '♔' : u.legend ? '★' : `${k.rank}${SYM[k.suit]}`;
+    const inner = `<span class="rk">${rk}</span>${tl ? `<span class="tl">${tl}</span>` : ''}${k.inf ? '' : `<span class="gl ${red(k.suit) ? 'red' : ''}">${glyph}</span>`}${gar}`;
+    const art = `<div class="uart${k.inf ? '' : ' glyph'}"${k.inf ? ` style="background-image:url(${ART[k.cls]})"` : ''}>${inner}</div>`;
+    return `<div ${attrs}><div class="${cls}" title="${title}"><div class="nm">${k.name}</div>${art}`
       + `<div class="hpbar"><i class="${barCls}" style="width:${Math.round(ratio * 100)}%"></i></div>${stats}</div>${num}${opHtml}</div>`;
   }
 
