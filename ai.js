@@ -6,7 +6,7 @@
 
   function sideScore(s, p) {
     const pl = s.players[p], king = E.kingOf(s, p), foeKing = E.kingOf(s, 1 - p);
-    let v = king.hp * 3 + king.armor * 4 + pl.hand.length * 2 + (pl.revealed ? 1 : 0);
+    let v = king.hp * 3 + king.armor * 4 + pl.hand.length * 2 + pl.infDeck.length * 0.2;
     const home = E.backRow(p), foeRow = E.backRow(1 - p);
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {

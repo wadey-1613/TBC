@@ -6,93 +6,111 @@
 <title>TBC — King's Table</title>
 <style>
   :root { --bg:#14161d; --panel:#1d212c; --line:#323a4d; --text:#e8ebf2; --dim:#8b94ab; --gold:#f2c14e; --me:#4aa3ff; --foe:#ff6b6b; --ok:#5fd38d;
-          --S:#9fb4d9; --C:#8fd6a0; --D:#ff9c6b; --H:#ff7b9c; --I:#c9ccd6; }
+          --S:#9fb4d9; --C:#8fd6a0; --D:#ff9c6b; --H:#ff7b9c; --I:#c9ccd6; --atk:#ff9f43; --arm:#7fc4ff; --hp:#5fd38d; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font:13px/1.25 system-ui,sans-serif; user-select:none; }
-  #app { display:grid; grid-template-columns: minmax(0,1fr) 360px; gap:12px; max-width:1180px; margin:0 auto; padding:10px; }
-  #board { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; align-content:start; }
-  .cell { height:68px; border:1px solid #2a3144; border-radius:6px; position:relative; background:#181c26; }
+  #app { display:grid; grid-template-columns: minmax(0,1fr) 400px; gap:12px; max-width:1240px; margin:0 auto; padding:10px; align-items:start; }
+  #main { display:flex; flex-direction:column; gap:10px; min-width:0; }
+  #board { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
+  .cell { height:80px; border:1px solid #2a3144; border-radius:6px; position:relative; background:#181c26; }
   .cell.home0 { background:#16253a; } .cell.home1 { background:#3a1b22; }
   .cell.reach { background:rgba(242,193,78,.08); box-shadow: inset 0 0 0 2px rgba(242,193,78,.3); }
   .cell.dest { border:2px solid var(--gold); background:rgba(242,193,78,.14); cursor:pointer; }
-  .cell .lbl { position:absolute; left:4px; bottom:2px; font-size:9px; color:#4b556d; }
-  .unit { position:absolute; inset:0; border-radius:5px; padding:2px 5px; display:flex; flex-direction:column; justify-content:space-between; background:linear-gradient(#2c3348,#222839); border-top:4px solid var(--line); overflow:hidden; }
+  .cell.ko { animation:koflash .9s ease-out; }
+  @keyframes koflash { 0% { background:#a8242c; } 100% { background:#181c26; } }
+  .float { position:absolute; left:0; right:0; top:18px; text-align:center; font-size:24px; font-weight:900; pointer-events:none; z-index:5; text-shadow:0 1px 3px #000; animation:floatup 1.3s ease-out forwards; }
+  .float.dmg { color:#ff4d4d; } .float.heal { color:#5fe08d; } .float.dead { color:#fff; font-size:20px; }
+  @keyframes floatup { 0% { transform:translateY(8px); opacity:0; } 15% { opacity:1; } 100% { transform:translateY(-26px); opacity:0; } }
+  .unit { position:absolute; inset:0; border-radius:5px; padding:3px 4px 3px; display:flex; flex-direction:column; justify-content:space-between; gap:2px; background:linear-gradient(#2c3348,#222839); border-top:4px solid var(--line); overflow:hidden; }
   .unit.S { border-top-color:var(--S); } .unit.C { border-top-color:var(--C); } .unit.D { border-top-color:var(--D); } .unit.H { border-top-color:var(--H); } .unit.I { border-top-color:var(--I); }
   .unit.king { background:linear-gradient(#4a3d17,#2f2610); border-top-color:var(--gold); }
   .unit.p0 { box-shadow: inset 0 0 0 1px var(--me); } .unit.p1 { box-shadow: inset 0 0 0 1px var(--foe); }
   .unit.ready { box-shadow: inset 0 0 0 3px var(--ok); cursor:pointer; }
   .unit.selected { box-shadow: inset 0 0 0 3px #fff; }
   .unit.target { box-shadow: inset 0 0 0 3px var(--gold), 0 0 10px var(--gold); cursor:pointer; }
-  .unit.spent { opacity:.78; }
-  .unit .nm { font-weight:700; font-size:11px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .unit .st { display:flex; justify-content:space-between; font-size:13px; font-weight:800; }
-  .unit .new { position:absolute; top:0; left:4px; font-size:9px; font-weight:800; color:var(--gold); text-transform:uppercase; }
+  .unit.spent { opacity:.8; }
   .unit.fresh { border-style:dashed; }
+  .unit.hit { animation:hitflash .7s ease-out; }
+  .unit.healed { animation:healflash .7s ease-out; }
+  @keyframes hitflash { 0%,30% { background:#b3262e; } 100% { } }
+  @keyframes healflash { 0%,30% { background:#1f7a46; } 100% { } }
+  .unit .nm { font-weight:700; font-size:11px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-top:2px; }
   .unit .rk { font-size:10px; font-weight:800; position:absolute; top:-1px; right:4px; color:var(--dim); }
-  .a { color:#ffb454; } .h { color:var(--ok); } .h.hurt { color:var(--foe); } .ar { color:#9fd4ff; }
-  #side { display:flex; flex-direction:column; gap:8px; min-width:0; }
-  .bar { display:flex; align-items:center; gap:12px; background:var(--panel); border-radius:8px; padding:6px 12px; color:var(--dim); flex-wrap:wrap; }
+  .unit .new { position:absolute; top:0; left:4px; font-size:9px; font-weight:800; color:var(--gold); text-transform:uppercase; }
+  .hpbar { height:5px; border-radius:3px; background:#0f1219; overflow:hidden; }
+  .hpbar i { display:block; height:100%; background:var(--hp); }
+  .hpbar i.mid { background:#e6c04a; } .hpbar i.low { background:#ff5656; }
+  .stats { display:flex; gap:3px; justify-content:space-between; }
+  .pill { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:2px; border-radius:5px; font-weight:800; font-size:12px; padding:1px 2px; white-space:nowrap; background:#10131b; }
+  .pill.a { color:var(--atk); } .pill.ar { color:var(--arm); } .pill.h { color:var(--hp); }
+  .pill.a.buffed, .pill.ar.buffed { color:#ffe08a; background:#3b3115; }
+  .pill.h.hurt { color:#ff6b6b; background:#3a1518; }
+  .pill.zero { opacity:.45; }
+  #side { display:flex; flex-direction:column; gap:8px; min-width:0; position:sticky; top:10px; }
+  .bar { display:flex; align-items:center; gap:10px; background:var(--panel); border-radius:8px; padding:6px 12px; color:var(--dim); flex-wrap:wrap; }
   .bar b { color:var(--text); } .bar .grow { flex:1; }
   .active-badge { color:var(--gold); font-weight:700; }
-  .dealrow { display:flex; gap:8px; align-items:flex-start; }
-  .slot { flex:1; min-width:0; }
-  .slot h4 { margin:0 0 4px; font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; }
-  #hand { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
-  .card { height:150px; background:linear-gradient(#303853,#232a3d); border:2px solid var(--line); border-top:5px solid var(--line); border-radius:9px; padding:5px; display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .sect h4 { margin:0 0 4px; font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; display:flex; justify-content:space-between; }
+  .sect h4 span { text-transform:none; letter-spacing:0; }
+  .row3 { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  .cwrap { display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .card { height:140px; background:linear-gradient(#303853,#232a3d); border:2px solid var(--line); border-top:5px solid var(--line); border-radius:9px; padding:4px 5px; display:flex; flex-direction:column; gap:2px; min-width:0; }
   .card.S { border-top-color:var(--S); } .card.C { border-top-color:var(--C); } .card.D { border-top-color:var(--D); } .card.H { border-top-color:var(--H); } .card.inf { border-top-color:var(--I); }
   .card.playable { border-color:var(--ok); cursor:pointer; }
-  .card.selected { border-color:#fff; transform:translateY(-4px); }
+  .card.selected { border-color:#fff; transform:translateY(-3px); }
   .card.dim { opacity:.55; }
-  .card.empty { border-style:dashed; background:none; align-items:center; justify-content:center; color:#4b556d; opacity:1; }
-  .card .top { font-weight:800; font-size:13px; } .card .top.red { color:#ff7b7b; }
-  .card .nm { text-align:center; font-weight:700; font-size:12px; }
+  .card.empty { border-style:dashed; background:none; align-items:center; justify-content:center; color:#4b556d; text-align:center; font-size:11px; }
+  .card .top { font-weight:800; font-size:12px; } .card .top.red { color:#ff7b7b; }
+  .card .nm { text-align:center; font-weight:700; font-size:12px; line-height:1.1; }
   .card .ty { text-align:center; font-size:9px; color:var(--dim); text-transform:uppercase; }
-  .card .tx { font-size:10px; flex:1; text-align:center; color:#cfd5e6; overflow:hidden; }
+  .card .tx { font-size:10px; flex:1; text-align:center; color:#cfd5e6; overflow:hidden; line-height:1.15; }
   .card .tags { font-size:9px; color:var(--gold); text-align:center; text-transform:uppercase; }
-  .card .st { display:flex; justify-content:space-between; font-size:15px; font-weight:800; min-height:20px; }
+  .card .pill { font-size:14px; padding:2px 2px; }
   button { background:var(--gold); color:#111; border:0; border-radius:8px; padding:9px 16px; font-weight:800; font-size:14px; cursor:pointer; }
-  button.small { padding:5px 10px; font-size:12px; margin-top:4px; width:100%; }
-  button:disabled { background:#444; color:#888; cursor:default; }
-  #hint { color:var(--dim); min-height:32px; }
+  button.small { padding:4px 6px; font-size:11px; width:100%; }
+  button.alt { background:#3a4560; color:var(--text); }
+  button:disabled { background:#3a3f4d; color:#7b8294; cursor:default; }
+  #hint { color:var(--dim); min-height:32px; flex:1; }
   #endrow { display:flex; justify-content:space-between; align-items:center; gap:10px; }
-  #log { flex:1; min-height:120px; max-height:300px; overflow:auto; font-size:11px; color:var(--dim); background:var(--panel); border-radius:8px; padding:8px; }
+  #log { height:150px; overflow:auto; font-size:11px; color:var(--dim); background:var(--panel); border-radius:8px; padding:8px; }
   #log div { padding:2px 0; border-bottom:1px solid #262c3b; }
-  #help { font-size:11px; color:var(--dim); background:var(--panel); border-radius:8px; padding:8px; }
+  #help { font-size:11px; color:var(--dim); background:var(--panel); border-radius:8px; padding:8px 10px; }
   #help pre { margin:4px 0; font:11px/1.2 ui-monospace,monospace; color:var(--text); }
   #help b.S { color:var(--S); } #help b.C { color:var(--C); } #help b.D { color:var(--D); } #help b.H { color:var(--H); }
   #overlay { position:fixed; inset:0; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; z-index:10; }
   #overlay.show { display:flex; }
   #overlay .box { background:var(--panel); padding:26px 34px; border-radius:14px; text-align:center; max-width:480px; }
   #overlay h1 { margin:0 0 6px; } #overlay p { color:var(--dim); }
-  @media (max-width: 900px) { #app { grid-template-columns:1fr; } .cell { height:56px; } .unit .nm { font-size:9px; } .card { height:140px; } }
+  @media (max-width: 960px) { #app { grid-template-columns:1fr; } #side { position:static; } .cell { height:70px; } .unit .nm { font-size:9px; } .pill { font-size:10px; } }
 </style>
 </head>
 <body>
 <div id="app">
-  <div id="board"></div>
-  <div id="side">
-    <div id="foeBar" class="bar"></div>
-    <div id="myBar" class="bar"></div>
-    <div class="dealrow">
-      <div class="slot"><h4>Infantry deck</h4><div id="infantry"></div></div>
-      <div class="slot"><h4>Squad card</h4><div id="reveal"></div><button id="holdBtn" class="small">Hold in hand</button></div>
-    </div>
-    <div class="slot"><h4>Your hand (max 3)</h4><div id="hand"></div></div>
-    <div id="endrow"><span id="hint"></span><button id="endBtn">End turn</button></div>
+  <div id="main">
+    <div id="board"></div>
     <div id="log"></div>
     <div id="help">
-      <b>Goal:</b> march up the table and destroy the enemy castle (king). Your castle is at the bottom.<br>
-      <b>Each turn:</b> deploy 1 infantry (free) · reveal a squad card and play it or hold it · play 1 squad card · move up to 3 units a step each (forward or sideways), but only units that were on the board when your turn began (new ones can't move) · every unit may attack once.
-      New cards appear on your back row (blue).<br>
+      <b>Goal:</b> march up the table and destroy the enemy castle (king). Yours is at the bottom.<br>
+      <b>Each turn:</b> you are offered <b>3 infantry</b>: deploy one (free), recycle one to the bottom of the deck, the third is discarded.
+      You are offered <b>2 squad cards</b>: play one or hold it (hand max 3), the other is discarded. You can play 1 squad card a turn.
+      Move up to 3 units a step each (forward or sideways), but only units that were on the board when your turn began. Every unit may attack once. New cards appear on your back row.<br>
+      <b>Card stats:</b> <span style="color:var(--atk)">⚔ attack</span> · <span style="color:var(--arm)">🛡 armour (cuts every hit)</span> · <span style="color:var(--hp)">♥ health (now/max)</span>.<br>
       <b>Reach shapes</b> (up is toward the enemy castle):
       <pre>MELEE      RANGE       DEFENCE
 x x x      x x x       x x x
 x M x      x x x       x D x
-x x x      - - -         
+x x x      - - -
              R</pre>
-      <b>Melee</b> hits all 8 tiles around it. <b>Range</b> hits the 2nd and 3rd rows ahead (blind spot right in front). <b>Defence</b> hits the 3 tiles ahead plus left and right, never behind.
-      A unit strikes back only if the attacker is adjacent and inside its own shape. <b class="D">♦ Siege</b> ignores armour. Damage boosts can only hit enemies one of your units could attack. Select a unit to see its reach. Right-click / Esc cancels.
+      A unit strikes back only if the attacker is adjacent and inside its own shape. <b class="D">♦ Siege</b> ignores armour. Damage boosts only hit enemies one of your units could attack. Select a unit to see its reach. Right-click / Esc cancels.
     </div>
+  </div>
+  <div id="side">
+    <div id="foeBar" class="bar"></div>
+    <div id="myBar" class="bar"></div>
+    <div class="sect"><h4>Infantry offer <span id="infInfo"></span></h4><div id="infantry" class="row3"></div></div>
+    <div class="sect"><h4>Squad offer <span id="squadInfo"></span></h4><div id="squad" class="row3"></div></div>
+    <div class="sect"><h4>Your hand (max 3)</h4><div id="hand" class="row3"></div></div>
+    <div id="endrow"><span id="hint"></span><button id="endBtn">End turn</button></div>
   </div>
 </div>
 <div id="overlay"><div class="box" id="overlayBox"></div></div>

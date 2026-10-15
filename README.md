@@ -4,10 +4,12 @@ War-sim card game on a shared 7x9 grid: march up the table and destroy the enemy
 Open `index.html` to play against the AI. `node test.js` runs rules tests and playouts.
 
 ## Per turn
-1. **Deploy 1 infantry** (free, top of your infantry deck). It appears on your back row.
-2. **Reveal a squad card** (top of your 52-card deck). Play it (units appear on your back row, boosts take effect) or **hold** it in your hand (max 3). You may play **one** squad card per turn, the revealed one or one from hand. An unused revealed card is discarded.
+1. **Infantry offer (3 cards):** deploy one (free, it appears on your back row), **recycle** one to the bottom of the infantry deck, and the third is **discarded** for good.
+2. **Squad offer (2 cards):** use one, either **play** it (units appear on your back row, boosts take effect) or **hold** it in your hand (max 3). The other is discarded. You can play **one** squad card per turn, the offered one or one from your hand.
 3. **Move up to 3 units**, one tile each, forward or sideways. Only units that were already on the board when your turn began can move; anything you place this turn is *new* and has to wait. (*Swift* units, like the Champion, don't use up one of the 3 moves.)
 4. **Attack:** every unit may attack once per turn, for free.
+
+Anything left in your offers when you end the turn is discarded. Both piles drain, so they act as a clock: about 2 cards a turn leave each deck, and you lose if you can't be offered a squad card.
 
 ## Reach (three shapes, from the design sketch)
 Forward is toward the enemy castle.

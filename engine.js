@@ -3,9 +3,10 @@
  * A shared 7-wide x 9-deep battlefield. Player 0 starts on row 0 and marches toward row 8; player 1 the reverse.
  * Each player's king (the castle) sits in the middle of their back row. Win by killing the enemy king.
  *
- * Per turn:  deploy 1 infantry (free, top of the infantry deck, appears on your back row)
- *            reveal 1 squad card, then either play it (units appear on your back row) or hold it (hand max 3)
- *            play at most 1 squad card (revealed or from hand)
+ * Per turn:  you are offered 3 infantry: deploy 1 (free, appears on your back row), recycle 1 to the
+ *            bottom of the infantry deck, and the third is discarded for good
+ *            you are offered 2 squad cards: use 1 (play it, or hold it in your hand, max 3), the other is discarded
+ *            play at most 1 squad card per turn (the offered one or one from hand)
  *            move up to 3 different units one step each (forward or sideways), but only units that were
  *            already on the board when your turn began; anything placed this turn is 'fresh' and can't move
  *            every unit may attack once per turn (free)
@@ -197,7 +198,7 @@
     for (let r = 0; r < ROWS; r++) state.board.push(new Array(COLS).fill(null));
     for (let p = 0; p < 2; p++) {
       state.board[backRow(p)][KING_C] = { uid: ++state.uid, id: 'KING', p, atk: 0, hp: KING_HP, maxHp: KING_HP, armor: 0, attacked: true, moved: true, fresh: false };
-      state.players.push({ deploys: 0, moves: 0, squadLeft: 0, revealed: null, deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [] });
+      state.players.push({ deploys: 0, moves: 0, squadLeft: 0, recycles: 0, infOffer: [], squadOffer: [], deck: shuffle(state, DECK.slice()), infDeck: shuffle(state, INF_DECK.slice()), hand: [], infDiscard: [], squadDiscard: [] });
     }
     startTurn(state);
     return state;
@@ -223,16 +224,25 @@
     pl.deploys = 1; // the second player's first turn gets a bonus deploy
     pl.moves = MOVES;
     pl.squadLeft = 1;
+    pl.recycles = 1;
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const u = state.board[r][c]; if (u && u.p === p) { u.attacked = false; u.moved = false; u.fresh = false; } }
     log(state, `— Turn ${state.turn}: Player ${p + 1} —`);
+    pl.infOffer = [];
+    while (pl.infOffer.length < 3 && pl.infDeck.length) pl.infOffer.push(pl.infDeck.pop());
+    pl.squadOffer = [];
     if (!pl.deck.length) loseBy(state, p, `Player ${p + 1} ran out of squad cards.`);
-    else { pl.revealed = pl.deck.pop(); log(state, `Player ${p + 1} reveals ${cardLabel(CARDS[pl.revealed])}.`); }
+    else {
+      pl.squadOffer.push(pl.deck.pop());
+      if (pl.deck.length) pl.squadOffer.push(pl.deck.pop());
+      log(state, `Player ${p + 1} is offered ${pl.infOffer.length} infantry and ${pl.squadOffer.map((id) => CARDS[id].name).join(' / ')}.`);
+    }
     cleanup(state);
   }
 
   function endTurn(state) {
     const pl = state.players[state.active];
-    if (pl.revealed) { log(state, `${CARDS[pl.revealed].name} is discarded.`); pl.revealed = null; }
+    if (pl.infOffer.length) { pl.infDiscard.push(...pl.infOffer); log(state, `${pl.infOffer.length} unused infantry discarded.`); pl.infOffer = []; }
+    if (pl.squadOffer.length) { pl.squadDiscard.push(...pl.squadOffer); log(state, `${pl.squadOffer.map((id) => CARDS[id].name).join(' / ')} discarded.`); pl.squadOffer = []; }
     state.active = 1 - state.active;
     state.turn++;
     startTurn(state);
@@ -320,17 +330,18 @@
   }
 
   // ---------------------------------------------------------------- legal actions
-  // hand: -1 = the revealed card, 0..2 = a card in hand
+  // hand: 0..2 = a card in hand; -1 / -2 = the first / second card of this turn's squad offer
   function legalActions(state) {
     if (state.winner != null) return [];
     const p = state.active, pl = state.players[p], acts = [];
     const spawns = spawnTiles(state, p);
 
-    if (pl.deploys > 0 && pl.infDeck.length) for (const cell of spawns) acts.push({ t: 'deploy', cell });
+    if (pl.deploys > 0) pl.infOffer.forEach((id, pick) => { for (const cell of spawns) acts.push({ t: 'deploy', pick, cell }); });
+    if (pl.recycles > 0) pl.infOffer.forEach((id, pick) => acts.push({ t: 'recycle', pick }));
 
     if (pl.squadLeft > 0) {
       const sources = pl.hand.map((id, i) => ({ id, i }));
-      if (pl.revealed) sources.push({ id: pl.revealed, i: -1 });
+      pl.squadOffer.forEach((id, k) => sources.push({ id, i: -1 - k }));
       for (const { id, i } of sources) {
         const c = CARDS[id];
         const targets = c.target ? validTargets(state, p, c.target) : [];
@@ -347,7 +358,7 @@
         }
       }
     }
-    if (pl.revealed && pl.hand.length < HAND_MAX) acts.push({ t: 'hold' });
+    if (pl.hand.length < HAND_MAX) pl.squadOffer.forEach((id, pick) => acts.push({ t: 'hold', pick }));
 
     const dir = dirOf(p);
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
@@ -377,15 +388,27 @@
 
     if (a.t === 'deploy') {
       pl.deploys--;
-      const c = placeUnit(state, p, pl.infDeck.pop(), a.cell);
+      const c = placeUnit(state, p, pl.infOffer.splice(a.pick, 1)[0], a.cell);
       log(state, `Player ${p + 1} deploys ${c.name}.`);
+    } else if (a.t === 'recycle') {
+      const id = pl.infOffer.splice(a.pick, 1)[0];
+      pl.infDeck.unshift(id); // bottom of the deck
+      pl.recycles--;
+      log(state, `Player ${p + 1} recycles ${CARDS[id].name} to the bottom of the infantry deck.`);
     } else if (a.t === 'hold') {
-      pl.hand.push(pl.revealed);
-      log(state, `Player ${p + 1} holds ${CARDS[pl.revealed].name}.`);
-      pl.revealed = null;
+      const id = pl.squadOffer[a.pick];
+      pl.squadDiscard.push(...pl.squadOffer.filter((x, k) => k !== a.pick));
+      pl.squadOffer = [];
+      pl.hand.push(id);
+      log(state, `Player ${p + 1} holds ${CARDS[id].name}.`);
     } else if (a.t === 'play') {
       let id;
-      if (a.hand === -1) { id = pl.revealed; pl.revealed = null; } else { id = pl.hand[a.hand]; pl.hand.splice(a.hand, 1); }
+      if (a.hand < 0) {
+        const k = -1 - a.hand;
+        id = pl.squadOffer[k];
+        pl.squadDiscard.push(...pl.squadOffer.filter((x, j) => j !== k));
+        pl.squadOffer = [];
+      } else { id = pl.hand[a.hand]; pl.hand.splice(a.hand, 1); }
       pl.squadLeft--;
       const c = CARDS[id];
       if (c.kind === 'unit') {

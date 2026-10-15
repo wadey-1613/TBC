@@ -41,7 +41,7 @@ assert.strictEqual(E.INF_DECK.length, 36);
 // --- rule spot checks
 function fresh() {
   const s = E.newGame(1);
-  for (const pl of s.players) { pl.hand = []; pl.revealed = null; pl.deploys = 1; pl.moves = 3; pl.squadLeft = 1; }
+  for (const pl of s.players) { pl.hand = []; pl.squadOffer = []; pl.deploys = 1; pl.moves = 3; pl.squadLeft = 1; pl.recycles = 1; }
   s.log = [];
   return s;
 }
@@ -82,17 +82,43 @@ const attack = (s, from, target) => E.applyAction(s, { t: 'attack', from, target
   put(swiftTest, 0, 0, 1, 'CJ').fresh = true;                // swift Champion, just placed
   assert.strictEqual(acts(swiftTest, 'move').length, 0, 'even swift units wait a turn');
 }
-{ // squad: revealed card must be played or held; hand max 3; one play per turn
+{ // squad offer: 2 cards, use one (play or hold), the other is discarded; hand max 3
   const s = fresh();
-  s.players[0].revealed = 'DA'; s.players[0].hand = ['SA', 'S2'];
-  assert.strictEqual(acts(s, 'hold').length, 1);
-  E.applyAction(s, acts(s, 'hold')[0]);
-  assert.strictEqual(s.players[0].hand.length, 3);
-  s.players[0].revealed = 'D2';
+  s.players[0].squadOffer = ['DA', 'D2']; s.players[0].hand = ['SA', 'S2'];
+  assert.strictEqual(acts(s, 'hold').length, 2, 'either offered card can be held');
+  E.applyAction(s, acts(s, 'hold').find((a) => a.pick === 0));
+  assert.deepStrictEqual(s.players[0].hand, ['SA', 'S2', 'DA']);
+  assert.deepStrictEqual(s.players[0].squadOffer, [], 'the other offered card is discarded');
+  assert.deepStrictEqual(s.players[0].squadDiscard, ['D2']);
+  s.players[0].squadOffer = ['D3'];
   assert.strictEqual(acts(s, 'hold').length, 0, 'hand is full');
-  const play = acts(s, 'play').find((a) => a.hand === -1);
-  E.applyAction(s, play);
+  E.applyAction(s, acts(s, 'play').find((a) => a.hand === -1));
   assert.strictEqual(acts(s, 'play').length, 0, 'one squad card per turn');
+  const s2 = fresh();
+  s2.players[0].squadOffer = ['DA', 'D2'];
+  E.applyAction(s2, acts(s2, 'play').find((a) => a.hand === -2));     // field the second offered card
+  assert.strictEqual(s2.board[0].filter((u) => u && u.id === 'D2').length, 1);
+  assert.deepStrictEqual(s2.players[0].squadDiscard, ['DA'], 'first offered card discarded');
+}
+{ // infantry offer: 3 cards, deploy one, recycle one to the bottom, discard the last
+  const s = E.newGame(5);
+  const pl = s.players[0], offer = pl.infOffer.slice(), before = pl.infDeck.length;
+  assert.strictEqual(offer.length, 3, 'offered 3 infantry');
+  assert.strictEqual(E.INF_DECK.length - before, 3, 'taken from the top of the deck');
+  E.applyAction(s, E.legalActions(s).find((a) => a.t === 'deploy' && a.pick === 1));
+  assert(s.board[0].some((u) => u && u.id === offer[1]), 'picked card deployed');
+  assert.strictEqual(E.legalActions(s).filter((a) => a.t === 'deploy').length, 0, 'one deploy per turn');
+  const rec = E.legalActions(s).filter((a) => a.t === 'recycle');
+  assert.strictEqual(rec.length, 2, 'either remaining card can be recycled');
+  const keep = pl.infOffer[0];
+  E.applyAction(s, rec[0]);
+  assert.strictEqual(pl.infDeck[0], keep, 'recycled card is at the bottom of the deck');
+  assert.strictEqual(pl.infDeck.length, before + 1);
+  assert.strictEqual(E.legalActions(s).filter((a) => a.t === 'recycle').length, 0, 'one recycle per turn');
+  E.applyAction(s, { t: 'end' });
+  assert.strictEqual(pl.infDiscard.length, 1, 'the third card is discarded for good');
+  assert.strictEqual(pl.infOffer.length, 0);
+  assert.strictEqual(s.players[1].infOffer.length, 3, 'next player is offered 3');
 }
 { // the three reach shapes from the sketch (player 0 faces up the board, row+)
   const hits = (s) => acts(s, 'attack').map((a) => `${a.target.r},${a.target.c}`).sort();

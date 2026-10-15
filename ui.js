@@ -5,17 +5,18 @@
   const ME = 0;
   const $ = (id) => document.getElementById(id);
   let state = null, pending = null, legal = [], aiRunning = false;
+  let prevUnits = new Map(), changes = new Map(), deaths = new Map(), reachSet = new Set();
 
   // ------------------------------------------------------------ selection logic
   // pending = partial action: { hand?, deploy?, from?, cell?, target? }. Legal actions are filtered by it.
   function fieldsMatch(a, pd) {
-    return (!pd.deploy || a.t === 'deploy') &&
+    return (pd.deploy === undefined || (a.t === 'deploy' && a.pick === pd.deploy)) &&
       (pd.hand === undefined || (a.t === 'play' && a.hand === pd.hand)) &&
       (pd.from === undefined || locEq(a.from, pd.from)) &&
       (pd.cell === undefined || locEq(a.cell, pd.cell)) &&
       (pd.target === undefined || sameRef(a.target, pd.target));
   }
-  const remaining = () => legal.filter((a) => a.t !== 'end' && a.t !== 'hold' && (!pending || fieldsMatch(a, pending)));
+  const remaining = () => legal.filter((a) => a.t !== 'end' && a.t !== 'hold' && a.t !== 'recycle' && (!pending || fieldsMatch(a, pending)));
   const complete = (a, pd) => (a.cell === undefined || pd.cell !== undefined) && (a.target === undefined || pd.target !== undefined);
   const myTurn = () => state.active === ME && !aiRunning && state.winner == null;
 
@@ -38,10 +39,10 @@
     tryExecute(); // boosts with no choices fire immediately
   }
 
-  function onInfantry() {
+  function onInfantry(pick) {
     if (!myTurn()) return;
-    if (!legal.some((a) => a.t === 'deploy')) { pending = null; return render(); }
-    pending = pending && pending.deploy ? null : { deploy: true };
+    if (!legal.some((a) => a.t === 'deploy' && a.pick === pick)) { pending = null; return render(); }
+    pending = pending && pending.deploy === pick ? null : { deploy: pick };
     render();
   }
 
@@ -72,7 +73,7 @@
       applyAction(state, AI.chooseAction(state));
       render();
       if (state.winner != null) { aiRunning = false; return showEnd(); }
-      setTimeout(step, 550);
+      setTimeout(step, 650);
     };
     setTimeout(step, 500);
   }
@@ -86,14 +87,14 @@
 
   function showMenu() {
     $('overlayBox').innerHTML = `<h1>King's Table</h1>
-      <p>March up the table and take the enemy castle.<br>Deploy infantry, flip squad cards, move one unit a turn.</p><button id="go">Start game</button>`;
+      <p>March up the table and take the enemy castle.<br>Each turn: pick from 3 infantry and 2 squad cards, then move and fight.</p><button id="go">Start game</button>`;
     $('overlay').classList.add('show');
     $('go').onclick = start;
   }
 
   function start() {
     state = newGame((Math.random() * 2 ** 31) | 0);
-    pending = null; aiRunning = false;
+    pending = null; aiRunning = false; prevUnits = new Map();
     $('overlay').classList.remove('show');
     render();
   }
@@ -103,29 +104,55 @@
   const REACH = { melee: 'melee · 8 around', range: 'range · 2nd & 3rd row ahead', defence: 'defence · front arc' };
   const kwText = (c) => (c.kind === 'spell' ? c.kw : [REACH[c.reach]].concat(c.kw)).join(' · ');
 
-  function barHtml(p) {
-    const pl = state.players[p], k = E.kingOf(state, p);
-    return `<b>${p === ME ? 'You' : 'Opponent'}</b><span>Castle <b>♥${k.hp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span>Moves <b>${pl.moves}</b></span><span>Squad deck <b>${pl.deck.length}</b></span><span>Infantry <b>${pl.infDeck.length}</b></span><span class="grow"></span>${state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
+  // attack / armour / health pills. `now` is the live unit (or null for a card in hand)
+  function statsHtml(id, now) {
+    const c = CARDS[id];
+    const atk = now ? now.atk : c.atk, arm = now ? now.armor : c.armor, hp = now ? now.hp : c.hp, max = now ? now.maxHp : c.hp;
+    return `<div class="stats"><span class="pill a${atk > c.atk ? ' buffed' : ''}${atk === 0 ? ' zero' : ''}" title="Attack">⚔${atk}</span>`
+      + `<span class="pill ar${arm > c.armor ? ' buffed' : ''}${arm === 0 ? ' zero' : ''}" title="Armour: cuts every hit">🛡${arm}</span>`
+      + `<span class="pill h${hp < max ? ' hurt' : ''}" title="Health">♥${hp}${now ? '/' + max : ''}</span></div>`;
   }
 
-  let reachSet = new Set();
+  function barHtml(p) {
+    const pl = state.players[p], k = E.kingOf(state, p);
+    return `<b>${p === ME ? 'You' : 'Opponent'}</b><span>Castle <b>♥${k.hp}/${k.maxHp}</b>${k.armor ? ' 🛡' + k.armor : ''}</span><span>Moves <b>${pl.moves}</b></span><span>Squad deck <b>${pl.deck.length}</b></span><span>Infantry <b>${pl.infDeck.length}</b></span><span class="grow"></span>${state.active === p ? '<span class="active-badge">● Active</span>' : ''}`;
+  }
+
   function tileHtml(r, c, rem) {
     const u = state.board[r][c], ref = { r, c };
     const isDest = pending !== null && pending.cell === undefined && rem.some((a) => locEq(a.cell, ref));
     const home = r === 0 ? ' home0' : r === ROWS - 1 ? ' home1' : '';
-    const attrs = `class="cell${home}${isDest ? ' dest' : ''}${reachSet.has(r * COLS + c) ? ' reach' : ''}" data-r="${r}" data-c="${c}"`;
-    if (!u) return `<div ${attrs}></div>`;
-    const k = CARDS[u.id];
+    const ko = deaths.has(r * COLS + c);
+    const attrs = `class="cell${home}${isDest ? ' dest' : ''}${reachSet.has(r * COLS + c) ? ' reach' : ''}${ko ? ' ko' : ''}" data-r="${r}" data-c="${c}"`;
+    const ghost = ko && !u ? '<div class="float dead">✖</div>' : '';
+    if (!u) return `<div ${attrs}>${ghost}</div>`;
+    const k = CARDS[u.id], delta = changes.get(u.uid) || 0;
     const isTarget = pending !== null && pending.target === undefined && rem.some((a) => a.target && sameRef(a.target, ref));
     const ready = u.p === ME && !pending && myTurn() && legal.some((a) => a.from && locEq(a.from, ref));
     const sel = pending && pending.from && locEq(pending.from, ref);
-    const cls = ['unit', 'p' + u.p, k.inf ? 'I' : (k.suit || ''), isKing(u) ? 'king' : '', ready ? 'ready' : '', isTarget ? 'target' : '', sel ? 'selected' : '', u.attacked && !isKing(u) ? 'spent' : '', u.fresh ? 'fresh' : ''].join(' ');
+    const cls = ['unit', 'p' + u.p, k.inf ? 'I' : (k.suit || ''), isKing(u) ? 'king' : '', ready ? 'ready' : '', isTarget ? 'target' : '', sel ? 'selected' : '', u.attacked && !isKing(u) ? 'spent' : '', u.fresh ? 'fresh' : '', delta < 0 ? 'hit' : delta > 0 ? 'healed' : ''].join(' ');
     const rk = isKing(u) ? '♔' : k.inf ? CLS_SYM[k.cls] : `${k.rank}${SYM[k.suit]}`;
     const title = `${k.name}${k.inf ? ' — ' + k.cls + ' infantry' : k.suit ? ' — ' + SUIT_ROLE[k.suit] : ''} [${isKing(u) ? 'castle' : REACH[k.reach]}${k.kw.length ? ', ' + k.kw.join(', ') : ''}]${k.text ? ': ' + k.text : ''}`;
+    const ratio = Math.max(0, u.hp / u.maxHp), barCls = ratio <= 0.34 ? 'low' : ratio <= 0.67 ? 'mid' : '';
     const stats = isKing(u)
-      ? `<span class="h ${u.hp < u.maxHp ? 'hurt' : ''}">♥${u.hp}</span>${u.armor ? `<span class="ar">🛡${u.armor}</span>` : ''}`
-      : `<span class="a">⚔${u.atk}</span>${u.armor ? `<span class="ar">🛡${u.armor}</span>` : ''}<span class="h ${u.hp < u.maxHp ? 'hurt' : ''}">♥${u.hp}</span>`;
-    return `<div ${attrs}><div class="${cls}" title="${title}"><span class="rk">${rk}</span>${u.fresh ? '<span class="new">new</span>' : ''}<div class="nm">${k.name}</div><div class="st">${stats}</div></div></div>`;
+      ? `<div class="stats"><span class="pill h${u.hp < u.maxHp ? ' hurt' : ''}">♥${u.hp}/${u.maxHp}</span><span class="pill ar${u.armor ? '' : ' zero'}">🛡${u.armor}</span></div>`
+      : statsHtml(u.id, u);
+    const num = delta ? `<div class="float ${delta < 0 ? 'dmg' : 'heal'}">${delta > 0 ? '+' : ''}${delta}</div>` : '';
+    return `<div ${attrs}><div class="${cls}" title="${title}"><span class="rk">${rk}</span>${u.fresh ? '<span class="new">new</span>' : ''}<div class="nm">${k.name}</div>`
+      + `<div class="hpbar"><i class="${barCls}" style="width:${Math.round(ratio * 100)}%"></i></div>${stats}</div>${num}</div>`;
+  }
+
+  // compare with the previous render so hits, heals and kills can be flashed
+  function trackChanges() {
+    changes = new Map(); deaths = new Map();
+    const cur = new Map();
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const u = state.board[r][c]; if (u) cur.set(u.uid, { hp: u.hp, r, c, king: isKing(u) }); }
+    prevUnits.forEach((old, uid) => {
+      const now = cur.get(uid);
+      if (now) { if (now.hp !== old.hp) changes.set(uid, now.hp - old.hp); }
+      else if (!old.king) deaths.set(old.r * COLS + old.c, true);
+    });
+    prevUnits = cur;
   }
 
   function boardHtml() {
@@ -142,23 +169,19 @@
     const cls = ['card', c.inf ? 'inf' : c.suit, opts.playable ? 'playable' : 'dim', opts.selected ? 'selected' : ''].join(' ');
     const top = c.inf ? CLS_SYM[c.cls] : `${c.rank}${SYM[c.suit]}`;
     const type = c.inf ? `${c.cls} infantry` : `${c.kind === 'spell' ? 'Boost' : 'Unit'} · ${SUIT_ROLE[c.suit]}`;
-    const stats = c.kind === 'unit' ? `<span class="a">⚔${c.atk}</span>${c.armor ? `<span class="ar">🛡${c.armor}</span>` : ''}<span class="h">♥${c.hp}</span>` : '';
     return `<div class="${cls}" ${opts.attr}><div class="top ${red(c.suit) ? 'red' : ''}">${top}</div><div class="nm">${c.name}</div>
-      <div class="ty">${type}</div><div class="tags">${kwText(c)}</div><div class="tx">${c.text}</div><div class="st">${stats}</div></div>`;
+      <div class="ty">${type}</div><div class="tags">${kwText(c)}</div><div class="tx">${c.text}</div>${c.kind === 'unit' ? statsHtml(id, null) : '<div class="stats"></div>'}</div>`;
   }
 
-  function infantryHtml() {
-    const pl = state.players[ME], top = pl.infDeck[pl.infDeck.length - 1];
-    if (!top) return '<div class="card empty">No infantry left</div>';
-    const can = myTurn() && legal.some((a) => a.t === 'deploy');
-    return cardHtml(top, { playable: can, selected: pending && pending.deploy, attr: 'data-inf="1"' });
-  }
-
-  function revealHtml() {
-    const pl = state.players[ME];
-    if (!pl.revealed) return '<div class="card empty">' + (state.active === ME ? 'Used' : '—') + '</div>';
-    const can = myTurn() && legal.some((a) => a.t === 'play' && a.hand === -1);
-    return cardHtml(pl.revealed, { playable: can, selected: pending && pending.hand === -1, attr: 'data-hand="-1"' });
+  function offersHtml() {
+    const pl = state.players[ME], can = myTurn();
+    let inf = pl.infOffer.map((id, i) => `<div class="cwrap">${cardHtml(id, { playable: can && legal.some((a) => a.t === 'deploy' && a.pick === i), selected: pending && pending.deploy === i, attr: `data-inf="${i}"` })}`
+      + `<button class="small alt" data-recycle="${i}" ${can && legal.some((a) => a.t === 'recycle' && a.pick === i) ? '' : 'disabled'}>↺ Recycle</button></div>`).join('');
+    if (!pl.infOffer.length) inf = `<div class="card empty" style="grid-column:span 3;height:60px">${pl.infDeck.length || pl.infDiscard.length ? 'Infantry offer used' : 'No infantry left'}</div>`;
+    let squad = pl.squadOffer.map((id, k) => `<div class="cwrap">${cardHtml(id, { playable: can && legal.some((a) => a.t === 'play' && a.hand === -1 - k), selected: pending && pending.hand === -1 - k, attr: `data-hand="${-1 - k}"` })}`
+      + `<button class="small alt" data-hold="${k}" ${can && legal.some((a) => a.t === 'hold' && a.pick === k) ? '' : 'disabled'}>Hold in hand</button></div>`).join('');
+    if (!pl.squadOffer.length) squad = '<div class="card empty" style="grid-column:span 3;height:60px">Squad offer used</div>';
+    return { inf, squad };
   }
 
   function handHtml() {
@@ -174,12 +197,12 @@
     if (state.active !== ME) return 'Opponent is thinking…';
     if (!pending) {
       const bits = [];
-      if (pl.deploys > 0 && pl.infDeck.length) bits.push('deploy infantry');
-      if (pl.revealed) bits.push('play or hold the squad card');
-      if (pl.moves > 0) bits.push(pl.moves + ' move' + (pl.moves > 1 ? 's' : '') + ' left');
-      return 'Your turn: ' + (bits.length ? bits.join(', ') + '. ' : '') + 'Select a green unit to move or attack.' + (pl.revealed ? ' An unused squad card is discarded when you end the turn.' : '');
+      if (pl.deploys > 0 && pl.infOffer.length) bits.push('pick an infantry to deploy');
+      if (pl.recycles > 0 && pl.infOffer.length) bits.push('recycle one');
+      if (pl.squadOffer.length) bits.push('play or hold a squad card');
+      return 'Your turn: ' + (bits.length ? bits.join(', ') + '. ' : '') + 'Select a green unit to move or attack (' + pl.moves + ' move' + (pl.moves === 1 ? '' : 's') + ' left). Unused offers are discarded when you end the turn.';
     }
-    if (pending.deploy) return 'Choose a tile on your back row.';
+    if (pending.deploy !== undefined) return 'Choose a tile on your back row.';
     if (pending.hand !== undefined) {
       const needCell = remaining().some((a) => a.cell !== undefined);
       return needCell && pending.cell === undefined ? 'Choose a tile on your back row.' : 'Choose a target.';
@@ -189,13 +212,17 @@
 
   function render() {
     legal = state.active === ME && state.winner == null ? legalActions(state) : [];
+    trackChanges();
     $('board').innerHTML = boardHtml();
     $('foeBar').innerHTML = barHtml(1 - ME);
     $('myBar').innerHTML = barHtml(ME);
-    $('infantry').innerHTML = infantryHtml();
-    $('reveal').innerHTML = revealHtml();
+    const o = offersHtml();
+    $('infantry').innerHTML = o.inf;
+    $('squad').innerHTML = o.squad;
     $('hand').innerHTML = handHtml();
-    $('holdBtn').disabled = !(myTurn() && legal.some((a) => a.t === 'hold'));
+    const pl = state.players[ME];
+    $('infInfo').textContent = `deck ${pl.infDeck.length} · discarded ${pl.infDiscard.length}`;
+    $('squadInfo').textContent = `deck ${pl.deck.length} · discarded ${pl.squadDiscard.length}`;
     $('hint').textContent = hint();
     $('endBtn').disabled = !myTurn();
     const logEl = $('log');
@@ -205,13 +232,17 @@
 
   // ------------------------------------------------------------ events
   document.addEventListener('click', (e) => {
+    const rec = e.target.closest('[data-recycle]');
+    if (rec) { if (myTurn() && !rec.disabled) run({ t: 'recycle', pick: +rec.dataset.recycle }); return; }
+    const hold = e.target.closest('[data-hold]');
+    if (hold) { if (myTurn() && !hold.disabled) run({ t: 'hold', pick: +hold.dataset.hold }); return; }
     const hand = e.target.closest('[data-hand]');
     if (hand) return onHand(+hand.dataset.hand);
-    if (e.target.closest('[data-inf]')) return onInfantry();
+    const inf = e.target.closest('[data-inf]');
+    if (inf) return onInfantry(+inf.dataset.inf);
     const cell = e.target.closest('.cell');
     if (cell) return onTile({ r: +cell.dataset.r, c: +cell.dataset.c });
   });
-  $('holdBtn').onclick = () => { if (myTurn()) run({ t: 'hold' }); };
   $('endBtn').onclick = () => { if (myTurn()) run({ t: 'end' }); };
   const cancel = () => { pending = null; if (state) render(); };
   document.addEventListener('contextmenu', (e) => { e.preventDefault(); cancel(); });
