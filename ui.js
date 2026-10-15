@@ -6,7 +6,7 @@
   // card art for the four infantry classes (the published page inlines these as data URIs)
   const ART = window.TBC_ART || { melee: 'art/melee.jpg', ranged: 'art/ranged.jpg', defence: 'art/defence.jpg', rogue: 'art/rogue.jpg' };
   const $ = (id) => document.getElementById(id);
-  let state = null, pending = null, legal = [], aiRunning = false, notice = '';
+  let state = null, pending = null, preview = null, legal = [], aiRunning = false, notice = '';
   let prevUnits = new Map(), changes = new Map(), deaths = new Map(), reachSet = new Set();
 
   // ------------------------------------------------------------ game recorder
@@ -63,7 +63,7 @@
   const myTurn = () => state.active === ME && !aiRunning && state.winner == null;
 
   function run(a) {
-    pending = null; notice = '';
+    pending = null; notice = ''; preview = null;
     doAction(a);
     afterAction();
   }
@@ -74,8 +74,16 @@
     else render();
   }
 
-  function onHand(i) {
-    if (!myTurn()) return;
+  // Clicking a card in your hand shows the whole card with a Deploy / Play button; clicking off it puts it back.
+  function onHand(i) { preview = { i }; render(); }
+  function playPreview() {
+    if (!preview) return;
+    const i = preview.i;
+    preview = null;
+    pickHand(i);
+  }
+  function pickHand(i) {
+    if (!myTurn()) return render();
     notice = '';
     const pl = state.players[ME], c = CARDS[pl.hand[i]];
     if (!legal.some((a) => a.t === 'play' && a.hand === i)) {
@@ -283,7 +291,7 @@
 
   function cardHtml(id, opts) {
     const c = CARDS[id];
-    const cls = ['card', c.inf ? 'inf free' : c.suit, opts.playable ? 'playable' : 'dim', opts.selected ? 'selected' : ''].join(' ');
+    const cls = ['card', opts.big ? 'big' : '', c.inf ? 'inf free' : c.suit, opts.playable ? 'playable' : 'dim', opts.selected ? 'selected' : ''].join(' ');
     const top = c.inf ? CLS_SYM[c.cls] : `${c.rank}${SYM[c.suit]}`;
     const type = c.inf ? `${c.cls} infantry` : `${c.kind === 'spell' ? 'Boost' : 'Unit'} · ${SUIT_ROLE[c.suit]}`;
     const cost = c.inf ? '<div class="cost">FREE</div>' : `<div class="cost" title="Costs ${c.cost} mana">${c.cost}</div>`;
@@ -338,6 +346,14 @@
     $('hand').innerHTML = handHtml();
     $('handInfo').textContent = `${state.players[ME].hand.length}/${HAND_MAX}`;
     $('hint').textContent = hint();
+    const cv = $('cardView');
+    if (preview && state.players[ME].hand[preview.i]) {
+      const id = state.players[ME].hand[preview.i], c = CARDS[id], pl = state.players[ME];
+      const ok = myTurn() && legal.some((a) => a.t === 'play' && a.hand === preview.i);
+      const why = ok ? '' : state.active !== ME || aiRunning ? 'Wait for your turn to play it.' : c.cost > pl.mana ? `Costs ${c.cost} mana and you have ${pl.mana}.` : "Can't be played right now (nothing in reach, or nowhere to put it).";
+      cv.innerHTML = `<div class="box">${cardHtml(id, { big: true, playable: ok })}<div class="why">${why}</div><div class="btnrow"><button data-playcard ${ok ? '' : 'disabled'}>${c.kind === 'unit' ? 'Deploy' : 'Play'} (${c.cost} mana)</button><button class="alt" data-close>Back to hand</button></div></div>`;
+      cv.classList.add('show');
+    } else { preview = null; cv.classList.remove('show'); cv.innerHTML = ''; }
     $('endBtn').disabled = !myTurn();
     $('swapBtn').disabled = !(myTurn() && legal.some((a) => a.t === 'swapInf'));
     const sel = pending && pending.from && state.board[pending.from.r][pending.from.c];
@@ -358,6 +374,8 @@
   // ------------------------------------------------------------ events
   document.addEventListener('click', (e) => {
     const t = e.target;
+    if (t.id === 'cardView' || t.closest('[data-close]')) { preview = null; return render(); }
+    if (t.closest('[data-playcard]')) return playPreview();
     const bld = t.closest('[data-build]');
     if (bld && myTurn()) { const [r, c, kind] = bld.dataset.build.split(','); return run({ t: 'build', at: { r: +r, c: +c }, kind }); }
     const hand = t.closest('[data-hand]');
@@ -379,7 +397,7 @@
   $('summonBtn').onclick = () => { if (myTurn()) { pending = pending && pending.summon ? null : { summon: true }; render(); } };
   $('trapBtn').onclick = () => toggleMode('trap');
   $('bombBtn').onclick = () => toggleMode('bomb');
-  const cancel = () => { pending = null; notice = ''; if (state) render(); };
+  const cancel = () => { pending = null; notice = ''; preview = null; if (state) render(); };
   document.addEventListener('contextmenu', (e) => { e.preventDefault(); cancel(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancel(); });
 

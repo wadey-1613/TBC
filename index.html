@@ -119,6 +119,14 @@
   .pickrow { display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-bottom:14px; }
   .pickcol { display:flex; flex-direction:column; gap:6px; align-items:stretch; }
   .btnrow { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  #cardView { position:fixed; inset:0; background:rgba(8,10,16,.7); display:none; align-items:center; justify-content:center; z-index:9; padding:16px; }
+  #cardView.show { display:flex; }
+  #cardView .box { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  #cardView .card.big { width:250px; height:360px; padding:12px 14px; gap:6px; transform:none; cursor:default; }
+  #cardView .card.big .top { font-size:20px; } #cardView .card.big .nm { font-size:22px; } #cardView .card.big .ty { font-size:12px; } #cardView .card.big .tags { font-size:12px; }
+  #cardView .card.big .tx { font-size:15px; } #cardView .card.big .pill { font-size:22px; padding:5px 2px; } #cardView .card.big .art { min-height:150px; }
+  #cardView .card .cost { width:32px; height:32px; font-size:17px; top:-12px; left:-12px; }
+  #cardView .why { color:var(--gold); min-height:16px; font-size:13px; }
   #overlay { position:fixed; inset:0; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; z-index:10; }
   #overlay.show { display:flex; }
   #overlay .box { background:var(--panel); padding:26px 34px; border-radius:14px; text-align:center; max-width:480px; }
@@ -162,6 +170,7 @@ x x x      - - -
     </div>
   </div>
 </div>
+<div id="cardView"></div>
 <div id="overlay"><div class="box" id="overlayBox"></div></div>
 <script src="engine.js"></script>
 <script src="ai.js"></script>
