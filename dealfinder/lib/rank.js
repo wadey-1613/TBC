@@ -52,7 +52,7 @@ export function rankListings(listings, query, { history = [] } = {}) {
     if (l.sellerRating != null && l.sellerRating >= 98) reasons.push('top-rated seller');
     if (!colourHit) reasons.push(`colour not in title`);
 
-    return { ...l, total: round(price), score: Math.round(Math.min(100, score)), reasons };
+    return { ...l, total: round(price), saving: med && price < med ? Math.round((1 - price / med) * 100) : 0, score: Math.round(Math.min(100, score)), reasons };
   }).filter(Boolean);
 
   return scored.sort((a, b) => b.score - a.score || a.total - b.total);

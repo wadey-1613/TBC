@@ -7,8 +7,9 @@ const FILE = process.env.DEALFINDER_DATA ?? new URL('../data/db.json', import.me
 let chain = Promise.resolve(); // serialise writes
 
 async function load() {
-  try { return JSON.parse(await readFile(FILE, 'utf8')); }
-  catch { return { alerts: [], history: {} }; }
+  let db;
+  try { db = JSON.parse(await readFile(FILE, 'utf8')); } catch { db = {}; }
+  return { alerts: [], history: {}, watch: [], notifications: [], ...db };
 }
 async function save(db) {
   await mkdir(dirname(FILE), { recursive: true });
@@ -35,10 +36,10 @@ export async function historyFor(q) {
   return (db.history[searchKey(q)] ?? []).filter((p) => p.day < today).map((p) => p.total);
 }
 
-export async function priceSeries(q) {
+export async function priceSeries(q, id) {
   const db = await load();
   const byDay = {};
-  for (const p of db.history[searchKey(q)] ?? []) (byDay[p.day] ??= []).push(p.total);
+  for (const p of db.history[searchKey(q)] ?? []) if (!id || p.id === id) (byDay[p.day] ??= []).push(p.total);
   return Object.entries(byDay).map(([day, v]) => ({ day, min: Math.min(...v), count: v.length }));
 }
 
@@ -48,3 +49,22 @@ export const addAlert = (query, email) =>
 export const removeAlert = (id) => update((db) => { db.alerts = db.alerts.filter((a) => a.id !== id); });
 export const markSeen = (id, ids) =>
   update((db) => { const a = db.alerts.find((x) => x.id === id); if (a) a.seen = [...new Set([...a.seen, ...ids])].slice(-500); });
+
+// Watchlist: a listing snapshot plus the search that found it, so we can re-find it and spot price drops.
+export async function listWatch() { return (await load()).watch; }
+export const addWatch = (listing, query) =>
+  update((db) => {
+    const ex = db.watch.find((w) => w.listing.id === listing.id);
+    if (ex) return ex;
+    const w = { id: randomUUID(), listing, query, savedTotal: listing.total, created: Date.now() };
+    db.watch.push(w);
+    return w;
+  });
+export const removeWatch = (id) => update((db) => { db.watch = db.watch.filter((w) => w.id !== id && w.listing.id !== id); });
+export const setWatchTotal = (id, total, listing) =>
+  update((db) => { const w = db.watch.find((x) => x.id === id); if (w) { w.savedTotal = total; w.listing = { ...w.listing, ...listing }; } });
+
+export async function listNotifications() { return (await load()).notifications; }
+export const addNotification = (n) =>
+  update((db) => { const x = { id: randomUUID(), ts: Date.now(), read: false, ...n }; db.notifications.unshift(x); db.notifications = db.notifications.slice(0, 100); return x; });
+export const markAllRead = () => update((db) => { db.notifications.forEach((n) => { n.read = true; }); });
