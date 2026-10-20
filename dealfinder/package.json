@@ -4,8 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "test": "node --test"
+    "start": "node --env-file-if-exists=.env server.js",
+    "test": "node --test",
+    "check-keys": "node --env-file-if-exists=.env scripts/check-keys.js"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }
