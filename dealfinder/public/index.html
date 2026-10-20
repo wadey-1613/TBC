@@ -43,7 +43,7 @@ $('f').onsubmit=async e=>{e.preventDefault();$('status').textContent='Searching�
   const r=await fetch('/api/search',{method:'POST',body:JSON.stringify({text:$('text').value,maxPrice:$('max').value,colour:$('colour').value,condition:$('cond').value})});
   const d=await r.json();if(!r.ok){$('status').textContent=d.error;return}
   last=d.query;const q=d.query;
-  $('status').textContent=`${d.results.length} deals for “${q.keywords}${q.colour?' · '+q.colour:''}${q.maxPrice?' · ≤£'+q.maxPrice:''}” from ${d.sources.join(', ')}`+(d.demo?' — DEMO DATA (set EBAY_CLIENT_ID/EBAY_CLIENT_SECRET for live results)':'')+(d.errors.length?' — '+d.errors.join('; '):'');
+  $('status').textContent=`${d.results.length} deals for “${q.keywords}${q.colour?' · '+q.colour:''}${q.maxPrice?' · ≤£'+q.maxPrice:''}” from ${Object.entries(d.bySource).map(([k,v])=>k+' ('+v+')').join(', ')||d.sources.join(', ')}`+(d.demo?' — DEMO DATA (set EBAY_CLIENT_ID/EBAY_CLIENT_SECRET for live results)':'')+(d.errors.length?' — '+d.errors.join('; '):'');
   $('out').innerHTML=d.results.map(x=>`<a class="res" href="${esc(x.url)}" target="_blank" rel="noopener">
     <div class="img" style="${x.image?`background-image:url('${esc(x.image)}')`:''}"></div>
     <div><div class="t">${esc(x.title)}</div><div class="m">${esc(x.source)} · ${x.condition}${x.shipping?` · +£${x.shipping} postage`:' · free postage'}</div>

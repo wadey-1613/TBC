@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { parseQuery } from './lib/query.js';
-import { runSearch, activeSources } from './lib/search.js';
+import { runSearch, activeSources, allSources } from './lib/search.js';
 import { listAlerts, addAlert, removeAlert, priceSeries } from './lib/store.js';
 import { startAlertLoop } from './lib/alerts.js';
 
@@ -21,7 +21,7 @@ const routes = {
     const { query, email } = await readBody(req);
     json(res, 201, await addAlert(query, email));
   },
-  'GET /api/sources': async (req, res) => json(res, 200, activeSources().map((s) => s.name)),
+  'GET /api/sources': async (req, res) => json(res, 200, allSources()),
 };
 
 createServer(async (req, res) => {
