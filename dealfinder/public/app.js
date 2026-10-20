@@ -125,7 +125,7 @@ function details(id) {
   <div class="sm" style="color:var(--g)">✔ ${esc(d.source)} · ${d.condition}${d.shipping ? ` · £${d.shipping} postage included` : ' · Free postage'}</div>
   ${url ? `<a class="btn" style="margin:14px 0" href="${esc(url)}" target="_blank" rel="noopener">Go to Store</a>` : '<div class="btn ghost" style="margin:14px 0;opacity:.6">Demo listing — no store link</div>'}
   ${d.reasons?.length ? `<h3>Why it ranks well</h3><div style="margin:6px 0 14px">${d.reasons.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
-  <h3 style="margin-bottom:8px">Price History</h3>${chart(s)}</div>${tabs('')}`;
+  <h3 style="margin-bottom:8px">Price History${window.__DEMO ? ' (sample)' : ''}</h3>${chart(s)}</div>${tabs('')}`;
 }
 function chart(s) {
   if (!s) return '<div class="chart empty sm">Loading…</div>';
